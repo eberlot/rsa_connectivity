@@ -195,6 +195,7 @@ switch(what)
         vararginoptions(varargin,{'nCond','signal','theta','noise'});
 
         D = randn(nCond);
+        D(1:nCond:1:end)=zeros(nCond,1);
         NN=[]; 
         S.numPart = nPart;
         S.numVox  = nVox;
@@ -260,8 +261,35 @@ switch(what)
         ylabel('distance between identical RDMs');
         xlabel('noise proportion of RDM 1 vs. 2');
 
-
-
+    case 'normalize'
+        nCond = 5;     
+        D1=randn(nCond);
+        D2=randn(nCond);
+        D1(1:nCond+1:end)=zeros(nCond,1);
+        D2(1:nCond+1:end)=zeros(nCond,1);
+        
+        % normalize
+        s1 = mean(mean(D1));
+        s2 = mean(mean(D2));
+        D1_n = D1./s1;
+        D2_n = D2./s2;
+        
+        D1_meanSub  = bsxfun(@minus,D1,mean(D1,2));
+        D2_meanSub  = bsxfun(@minus,D2,mean(D2,2));
+        D1_standar = bsxfun(@times,D1,1./std(D1,[],2));
+        
+        v1=triu(D1);
+        v2=triu(D2);
+        v1(v1==0)=[];
+        v2(v2==0)=[];
+        v1=v1';
+        v2=v2';
+        m1=mean(v1);
+        m2=mean(v2);
+        v1_ms=v1./m1;
+        v2_ms=v2./m2;
+        
+        
     case 'PLOT_dist_hist'
         simuType='sameRDM'; % sameRDM or randomRDM, combRDM
         noiseLevels=[0,0.5,1];
