@@ -1,6 +1,6 @@
 function varargout = rsa_connect(what,varargin)
 
-baseDir = '/Users/eberlot/Documents/Data/rsa_connectivity';
+baseDir = '/Volumes/MotorControl/data/rsa_connectivity';
 % example RDM distance matrix
 load(fullfile(baseDir,'RDM.mat'));
 
@@ -195,7 +195,7 @@ switch(what)
         vararginoptions(varargin,{'nCond','signal','theta','noise'});
 
         D = randn(nCond);
-        D(1:nCond:1:end)=zeros(nCond,1);
+        D(1:nCond+1:end)=zeros(nCond,1);
         NN=[]; 
         S.numPart = nPart;
         S.numVox  = nVox;
@@ -271,23 +271,25 @@ switch(what)
         % normalize
         s1 = mean(mean(D1));
         s2 = mean(mean(D2));
-        D1_n = D1./s1;
-        D2_n = D2./s2;
+
+        %
+        % D2 = k*D1+res
+        % D2*s2 = D1*s1 + res
+        % D2 = (s1/s2)*D1+res;
+        % k = s1/s2
+        % res = D2-k*D1; 
+        k = s1/s2;
+        res = D2-k*D1;
+        
+        [U,S,V]=svd(res);
+        % U*V' - rotation
+        % S - non-isomorphic scaling
+        
+       % D2==k*D1+U*S*V'; (up to numeric precision)
         
         D1_meanSub  = bsxfun(@minus,D1,mean(D1,2));
         D2_meanSub  = bsxfun(@minus,D2,mean(D2,2));
         D1_standar = bsxfun(@times,D1,1./std(D1,[],2));
-        
-        v1=triu(D1);
-        v2=triu(D2);
-        v1(v1==0)=[];
-        v2(v2==0)=[];
-        v1=v1';
-        v2=v2';
-        m1=mean(v1);
-        m2=mean(v2);
-        v1_ms=v1./m1;
-        v2_ms=v2./m2;
         
         
     case 'PLOT_dist_hist'
