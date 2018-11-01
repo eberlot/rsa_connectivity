@@ -2,7 +2,7 @@ function varargout = rsa_connect(what,varargin)
 
 baseDir = '/Volumes/MotorControl/data/rsa_connectivity';
 % example RDM distance matrix
-%load(fullfile(baseDir,'RDM.mat'));
+load(fullfile(baseDir,'RDM.mat'));
 
 averageType={'allPart','averagePart','crossval'};
 distLabels={'corr','cosine','euclidean','distcorr'};
@@ -443,7 +443,7 @@ switch(what)
                 R.sharedNoise = s;
                 RR = addstruct(RR,R);
             end
-            fprintf('Done %d/%d: \tsimulations for noise level %d.\n',find(s==noise_s),length(noise_s),s);
+            fprintf('Done %d/%d /simulations for noise level: ')
         end
         figure
         subplot(421)
