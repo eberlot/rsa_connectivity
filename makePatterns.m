@@ -1,12 +1,16 @@
-function [Y partVec condVec] = makePatterns(varargin)
+function [Y, partVec,condVec] = makePatterns(varargin)
 % SArbuckle 10/2018
+% EBerlot changes (Nov2018):
+% - signal and noise separately
+% - partVec and condVec outputs
 % % housekeeping
 G     = []; % condition covariance matrix
 Sw    = []; % spatial covariance matrix
 nPart = []; % number of partitions
 nVox  = []; % number of voxels
-snr   = []; % signal-to-noise variance ratio (scale noise accordingly)
-vararginoptions(varargin,{'G','Sw','nPart','nVox','snr'});
+signal= []; % signal
+noise = []; % noise
+vararginoptions(varargin,{'G','Sw','nPart','nVox','signal','noise'});
 nCond = size(G,1);
     
 % % simulate patterns with condition covariance G and spatial
@@ -31,13 +35,14 @@ else
 end
 % - apply design to true patterns
 Y = X*Y;
-
+% add signal scaling
+Y = bsxfun(@times,Y,signal);
 % - generate IID noise
 % - scale noise by signal-to-noise signal-to-noise variance ratio
 % - add noise to patterns
 E = unifrnd(0,1,nCond*nPart,nVox);
-%E = mvnrnd(zeros(nCond*nPart,1),eye(nCond*nPart),nVox*nCond)';
-E = bsxfun(@times,E,sqrt(1/snr));
+% add noise scaling
+E = bsxfun(@times,E,noise);
 Y = Y + E;
 partVec = kron([1:nPart]',ones(nCond,1));            % Partitions
 condVec = kron(ones(nPart,1),[1:nCond]');

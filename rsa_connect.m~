@@ -2,10 +2,28 @@ function varargout = rsa_connect(what,varargin)
 
 baseDir = '/Volumes/MotorControl/data/rsa_connectivity';
 % example RDM distance matrix
-load(fullfile(baseDir,'RDM.mat'));
+%load(fullfile(baseDir,'RDM.mat'));
 
 averageType={'allPart','averagePart','crossval'};
 distLabels={'corr','cosine','euclidean','distcorr'};
+
+% for plotting
+gray=[120 120 120]/255;
+lightgray=[170 170 170]/255;
+silver=[230 230 230]/255;
+black=[0 0 0]/255;
+blue=[49,130,189]/255;
+mediumblue=[128,231,207]/255;
+lightblue=[158,202,225]/255;
+red=[222,45,38]/255;
+mediumred=[237,95,76]/255;
+lightred=[252,146,114]/255;
+
+sBW = style.custom({gray,lightgray,black,silver});
+sCol  = style.custom({blue,mediumblue,mediumred,lightblue});
+s2  = style.custom({gray,lightgray,lightred,silver});
+styTrained_sess=style.custom({red,mediumred,lightred});
+styUntrained_sess=style.custom({blue,mediumblue,lightblue});
 
 switch(what)
     
@@ -79,7 +97,6 @@ switch(what)
         end
         % save the structure
         save(fullfile(baseDir,sprintf('simulations_%s',rdmType)),'-struct','NN');
-
     case 'simulateData_comb'
         nCond = 5;
         theta = 1;
@@ -277,7 +294,7 @@ switch(what)
         NN=[]; 
         for s=snr
             for n=1:100
-                [Y1,partVec,condVec]    = makePatterns('G',Gc,'nVox',nVox,'nPart',nPart,'snr',s);
+                [Y1,partVec,condVec]    = makePatterns('G',Gc,'nVox',nVox,'nPart',nPart,'noise',s);
                 Ge1                     = pcm_estGCrossval(Y1,partVec,condVec);
                 N.G_calc                = rsa_vectorizeIPMfull(Ge1);
                 N.Dist_calc(1,:)        = rsa.distanceLDC(Y1,partVec,condVec);
@@ -376,54 +393,87 @@ switch(what)
         ylabel('true-estimated distance');
     case 'twoReg_sharedNoise'
         nCond = 5;      
+        numSim = 100;
       %  noise_s = [0:0.01:0.09,0.1:0.1:0.8];
-        noise_s = [0:1:10];
-        nPart = 9;
-        nVox = 1000;
-        RDMsim = 0.5; % 1 - same, 0.5 - different; 0 - one has zeros only
-        vararginoptions(varargin,{'nCond','signal','noise_s','RDMsim'});
- 
-        v1 = abs(randn(1,nCond*(nCond-1)/2));
-        D1 = rsa_squareRDM(v1);
-        H = eye(nCond) - 1/nCond;
-        Gc1 = -0.5*H*D1*H';
-        trueRDM(1,:) = rsa_vectorizeRDM(D1);
-         switch RDMsim
-            case 1
-                Gc2=Gc1;
-                trueRDM(2,:) = trueRDM(1,:);
-            case 0
-                Gc2=ones(5,5);
-                trueRDM(2,:) = zeros(size(trueRDM(1,:)));
-            case 0.5
-                v = abs(randn(1,nCond*(nCond-1)/2));
-                D = rsa_squareRDM(v);
+        noise_s = [0:1,5,10:10:50];
+        nPart   = 8;
+        nVox    = 1000;
+        RDMtype = 1; % 1 - same, 0.5 - different; 0 - one has zeros only
+        vararginoptions(varargin,{'nCond','signal','noise_s','RDMtype','numSim'});
+        
+        switch RDMtype
+            case 1 % G1 = G2 = 0
+                Gc1=zeros(5);
+                Gc2=zeros(5);
+                D1=zeros(5);
+                D2=zeros(5); 
+            case 2 % G1 = G2
+                v1 = abs(randn(1,nCond*(nCond-1)/2));
+                D1 = rsa_squareRDM(v1);
+                D2 = D1;
                 H = eye(nCond) - 1/nCond;
-                Gc2 = -0.5*H*D*H';
-                trueRDM(2,:)=rsa_vectorizeRDM(D);
-         end
-        trueRegDist = calcDist(trueRDM);
+                Gc1 = -0.5*H*D1*H';
+                Gc2=Gc1;
+            case 3 % G1 orthogonal G2
+                D=zeros(nCond); D1=D; D2=D;
+                D1(1:2,1:5)=1;
+                D1(3:5,1:2)=1;
+                D2(3:5,3:5)=1;
+                D1(1:nCond+1:end)=0;
+                D2(1:nCond+1:end)=0;
+                H = eye(nCond) - 1/nCond;
+                Gc1 = -0.5*H*D1*H';
+                Gc2 = -0.5*H*D2*H';
+            case 4 % G1 ~= G2
+                v1 = abs(randn(1,nCond*(nCond-1)/2));
+                D1 = rsa_squareRDM(v1);
+                v2 = abs(randn(1,nCond*(nCond-1)/2));
+                D2 = rsa_squareRDM(v2);
+                H = eye(nCond) - 1/nCond;
+                Gc1 = -0.5*H*D1*H';
+                Gc2 = -0.5*H*D2*H';
+        end
+        % calculate true RDM
+        trueRDM(1,:)=rsa_vectorizeRDM(D1);
+        trueRDM(2,:)=rsa_vectorizeRDM(D2);
+        trueRegDist = calcDist(trueRDM); % true reg distance
         t = trueRDM';
-        tRDM = t(:);
-        NN=[]; RR=[];
+        tRDM = t(:); % vectorize across two RDMs
+        % make models for data generation
+        M{1}=makeModel('sameRDM',Gc1,nCond);
+        M{2}=makeModel('sameRDM',Gc2,nCond);
+        S.numPart = nPart;
+        S.numVox  = nVox;
+        NN=[]; RR=[]; DD=[];
         for s=noise_s
-            for n=1:100
-                [data{1},partVec,condVec]    = makePatterns('G',Gc1,'nVox',nVox,'nPart',nPart,'snr',1);
-                [data{2},partVec,condVec]    = makePatterns('G',Gc2,'nVox',nVox,'nPart',nPart,'snr',1);
+            for n=1:numSim
+                [data(1),partVec,condVec] = pcm_generateData(M{1},M{1}.theta,S,1,1,0); %signal 10, noise 0
+                [data(2),partVec,condVec] = pcm_generateData(M{2},M{2}.theta,S,1,1,0);
+               % [data{1},partVec,condVec] = makePatterns('G',M{1}.Ac,'nPart',nPart,'nVox',nVox,'signal',1,'noise',0); %signal 10, noise 0
+               % [data{2},partVec,condVec] = makePatterns('G',M{2}.Ac,'nPart',nPart,'nVox',nVox,'signal',1,'noise',0);
                 % add shared noise across regions
+                Z = normrnd(1,0.2,size(data{1},1),2*nVox);
+                g = 1; % scalar
+                P = zeros(2*nVox)+0.5; % voxel covariance matrix
+                P(1:2*nVox+1:end)=ones(2*nVox,1); % 1 on diag
+                Zn = sqrt(g)*Z*sqrtm(P);     % shared noise matrix across reg
+                data{1} = data{1} + s*Zn(:,1:nVox);
+                data{2} = data{2} + s*Zn(:,nVox+1:2*nVox);
+                % predict the multivariate dependency data{1}->data{2}
+                [R2_all,r_all]      = multiDepend(data{1},data{2},partVec,condVec,'type','all');
+                [R2_redA,r_redA]    = multiDepend(data{1},data{2},partVec,condVec,'type','reduceA');
+                [R2_redAB,r_redAB]  = multiDepend(data{1},data{2},partVec,condVec,'type','reduceAB');
+                N.R2_all    = repmat(R2_all,4,1);
+                N.r_all     = repmat(r_all,4,1);
+                N.R2_redA   = repmat(R2_redA,4,1);
+                N.r_redA    = repmat(r_redA,4,1);
+                N.R2_redAB  = repmat(R2_redAB,4,1);
+                N.r_redAB   = repmat(r_redAB,4,1);
                 
-                Z = normrnd(1,0.1,size(data{1},1),2*nVox);
-                g = 4; % scalar
-                P = zeros(2*nVox)+s; % voxel covariance matrix
-                P(1:2000+1:end)=ones(2000,1); % 1 on diag
-                
-                S = sqrt(g)*Z*sqrtm(P);     % make the shared noise matrix
-                data{1} = data{1} + S(:,1:nVox);
-                data{2} = data{2} + S(:,nVox+1:2*nVox);
-                
-                N.trueRegDist           = trueRegDist;
-                calcRDM                 = makeRDM_crossval(data,partVec,condVec);
-                N.calcRegDist           = calcDist(calcRDM);
+                % distance metrics
+                N.trueRegDist     = trueRegDist;
+                calcRDM           = makeRDM_crossval(data,partVec,condVec);
+                N.calcRegDist     = calcDist(calcRDM);  
                 % dist type labelling
                 N.distType        = [1:4]';
                 N.distLabel(1,:)  = {'correlation'};
@@ -433,38 +483,412 @@ switch(what)
                 N.sharedNoise     = repmat(s,4,1);
                 N.regCorr         = repmat(corr(data{1}(:),data{2}(:)),4,1);
                 N.numSim          = repmat(n,4,1);
-                NN = addstruct(NN,N);
-                
+                NN = addstruct(NN,N);   
                 % RDMs
                 c = calcRDM';
                 cRDM = c(:);
-                R.calcRDM = cRDM';
-                R.trueRDM = tRDM';
+                R.calcRDM       = cRDM';
+                R.trueRDM       = tRDM';
                 R.sharedNoise = s;
                 RR = addstruct(RR,R);
             end
-            fprintf('Done %d/%d /simulations for noise level: ')
+            fprintf('Done %d/%d: \tsimulations for noise level %d.\n',find(s==noise_s),length(noise_s),s);
         end
+        save(fullfile(baseDir,sprintf('sim_sharedNoise_RDM_type%d',RDMtype)),'-struct','NN');
+        save(fullfile(baseDir,sprintf('sim_sharedNoise_dist_RDM_type%d',RDMtype)),'-struct','RR');
+    case 'PLOT_sharedNoise_dist'
+        RDMtype = 1;
+        vararginoptions(varargin,{'RDMtype'});
+        N = load(fullfile(baseDir,sprintf('sim_sharedNoise_RDM_type%d',RDMtype)));
+        R = load(fullfile(baseDir,sprintf('sim_sharedNoise_dist_RDM_type%d',RDMtype)));
         figure
-        subplot(421)
-        plt.line(NN.sharedNoise,NN.calcRegDist,'split',NN.distType,'leg',distLabels,'leglocation','northeast');
+        subplot(441)
+        imagesc(rsa_squareRDM(R.trueRDM(1,[1:10]))); colorbar;
+        title('true RDM reg1');
+        subplot(442)
+        imagesc(rsa_squareRDM(R.trueRDM(2,[11:20]))); colorbar;
+        title('true RDM reg2');
+        subplot(443)
+        plt.scatter(N.sharedNoise,N.calcRegDist,'split',N.distType,'leg',distLabels,'style',sCol,'leglocation','northeast');
         xlabel('shared noise across regions');
         ylabel('estimated distance');
-        subplot(422)
-        plt.line(NN.sharedNoise,NN.trueRegDist-NN.calcRegDist,'split',NN.distType,'leg',distLabels,'leglocation','northeast');
-        xlabel('shared noise across regions');
-        ylabel('true-estimated distance');
+        subplot(444)
+        if RDMtype == 1
+            N.trueRegDist = zeros(size(N.trueRegDist));
+        end
+        if RDMtype <3
+            plt.scatter(N.sharedNoise,N.calcRegDist-N.trueRegDist,'split',N.distType,'leg',distLabels,'style',sCol,'leglocation','northeast');
+            hold on;
+            drawline(0,'dir','horz');
+            ylabel('corrected distance -');
+        else
+            plt.scatter(N.sharedNoise,N.calcRegDist./N.trueRegDist,'split',N.distType,'leg',distLabels,'style',sCol,'leglocation','northeast');
+            hold on;
+            drawline(1,'dir','horz');
+            ylabel('corrected distance /');
+        end
+        
+        t=N.trueRegDist(N.sharedNoise==0);
+        subplot(445)
+        plt.scatter(N.sharedNoise,N.calcRegDist,'split',N.distType,'subset',N.distType==1,'style',style.custom({blue}),'leg',distLabels(1));
+        hold on;
+        drawline(t(1),'dir','horz');
+        title(sprintf('true dist %2.1f',t(1)));
+        subplot(446)
+        plt.scatter(N.sharedNoise,N.calcRegDist,'split',N.distType,'subset',N.distType==2,'style',style.custom({mediumblue}),'leg',distLabels(2));
+        hold on;
+        drawline(t(2),'dir','horz');
+        title(sprintf('true dist %2.1f',t(2)));
+        subplot(447)
+        plt.scatter(N.sharedNoise,N.calcRegDist,'split',N.distType,'subset',N.distType==3,'style',style.custom({mediumred}),'leg',distLabels(3));
+        hold on;
+        drawline(t(3),'dir','horz');
+        title(sprintf('true dist %2.1f',t(3)));
+        subplot(448)
+        plt.scatter(N.sharedNoise,N.calcRegDist,'split',N.distType,'subset',N.distType==2,'style',style.custom({lightblue}),'leg',distLabels(4));
+        hold on;
+        drawline(t(4),'dir','horz');
+        title(sprintf('true dist %2.1f',t(4)));
+        subplot(449)
+        T = getrow(R,R.sharedNoise==0);
+        imagesc(rsa_squareRDM(mean(T.calcRDM(:,[1:10])))); colorbar;
+        title('calc RDM1 - noise 0');
+        subplot(4,4,10)
+        imagesc(rsa_squareRDM(mean(T.calcRDM(:,[11:20])))); colorbar;
+        title('calc RDM2 - noise 0');
+        subplot(4,4,13)
+        T = getrow(R,R.sharedNoise==50);
+        imagesc(rsa_squareRDM(mean(T.calcRDM(:,[1:10])))); colorbar;
+        title('calc RDM1 - noise 50');
+        subplot(4,4,14)
+        imagesc(rsa_squareRDM(mean(T.calcRDM(:,[11:20])))); colorbar;
+        title('calc RDM2 - noise 50');
+    case 'PLOT_sharedNoise_cov_v1'
+        RDMtype = 1;
+        vararginoptions(varargin,{'RDMtype'});
+        R = load(fullfile(baseDir,sprintf('sim_sharedNoise_dist_RDM_type%d',RDMtype)));
+        figure
+        sn = [0,10,30,50];
+        idx=1;
+        for i=1:length(sn)
+            T = getrow(R,R.sharedNoise==sn(i));
+            t = nanmean(T.calcRDM,1);
+            subplot(length(sn),4,idx)
+            imagesc(t(1:10)'*t(1:10)); colorbar;
+            title(sprintf('d1^T * d1 - %d noise',sn(i)));
+            subplot(length(sn),4,idx+1)
+            imagesc(t(11:20)'*t(11:20)); colorbar;
+            title('d2^T * d2');
+            subplot(length(sn),4,idx+2)
+            imagesc(t(1:10)'*t(11:20)); colorbar;
+            title('d1^T * d2');
+            subplot(length(sn),4,idx+3)
+            imagesc((t(1:10)'*t(11:20))/ssqrt((t(1:10)'*t(1:10))*t(11:20)'*t(11:20))); colorbar;
+            title('corr d1 d2');
+            idx=idx+4;
+        end
+    case 'PLOT_sharedNoise_cov_v2'
+        RDMtype = 1;
+        vararginoptions(varargin,{'RDMtype'});
+        R = load(fullfile(baseDir,sprintf('sim_sharedNoise_dist_RDM_type%d',RDMtype)));
+        figure
+        sn = [0,10,30,50];
+        idx=1;
+        for i=1:length(sn)
+            T = getrow(R,R.sharedNoise==sn(i));
+            for j=1:size(T.calcRDM,1)
+                d1(j,:)=T.calcRDM(j,[1:10])*T.calcRDM(j,[1:10])';
+                d2(j,:)=T.calcRDM(j,[11:20])*T.calcRDM(j,[11:20])';
+                d12(j,:)=T.calcRDM(j,[1:10])*T.calcRDM(j,[11:20])';
+                dc(j,:)=(d12(j)/ssqrt(d1(j)*d2(j)));
+            end
+            if any(isnan(dc))
+                dc(isnan(dc))=0;
+            end
+            subplot(length(sn),4,idx);
+            plt.scatter(d1,d12);
+            xlabel('var(d1)');
+            ylabel('cov(d1,d2)');
+            title(sprintf('noise %d',sn(i)));
+            subplot(length(sn),4,idx+1);
+            plt.scatter(d2,d12);
+            xlabel('var(d2)');
+            ylabel('cov(d1,d2)');
+            subplot(length(sn),4,idx+2);
+            plt.scatter(d1,dc);
+            xlabel('var(d1)');
+            ylabel('corr(d1,d2)');
+            subplot(length(sn),4,idx+3);
+            plt.scatter(d12,dc);
+            xlabel('cov(d1,d2)');
+            ylabel('corr(d1,d2)');
+            idx=idx+4;
+        end
+    case 'PLOT_sharedNoise_hist'
+        RDMtype = 1;
+        vararginoptions(varargin,{'RDMtype'});
+        R = load(fullfile(baseDir,sprintf('sim_sharedNoise_dist_RDM_type%d',RDMtype)));
+        sn = [0,5,20,30,50];
+        T = getrow(R,ismember(R.sharedNoise,sn));
+        for j=1:size(T.calcRDM,1)
+            d1(j,:)=T.calcRDM(j,[1:10])*T.calcRDM(j,[1:10])';
+            d2(j,:)=T.calcRDM(j,[11:20])*T.calcRDM(j,[11:20])';
+            d12(j,:)=T.calcRDM(j,[1:10])*T.calcRDM(j,[11:20])';
+            dc(j,:)=(d12(j)/ssqrt(d1(j)*d2(j)));
+        end
+        if any(isnan(dc))
+            dc(isnan(dc))=0;
+        end
+        figure
+        subplot(2,2,1);
+        plt.hist(d1,'split',T.sharedNoise);
+        title('var(d1)');
+        subplot(2,2,2);
+        plt.hist(d2,'split',T.sharedNoise);
+        title('var(d2)');
+        subplot(2,2,3);
+        plt.hist(d12,'split',T.sharedNoise);
+        title('cov(d1,d2)');
+        subplot(2,2,4);
+        plt.hist(dc,'split',T.sharedNoise);
+        title('corr(d1,d22)');
+    case 'PLOT_sharedNoise_r'
+        RDMtype=1;
+        
+        N = load(fullfile(baseDir,sprintf('sim_sharedNoise_RDM_type%d',RDMtype)));
         
         keyboard;
-%         subplot(143)
-%         plt.scatter(NN.regCorr,NN.calcRegDist,'split',NN.distType,'leg',distLabels,'leglocation','northeast');
-%         xlabel('overall region beta correlation');
-%         ylabel('estimated distance');
-%         subplot(144)
-%         plt.scatter(NN.regCorr,NN.trueRegDist-NN.calcRegDist,'split',NN.distType,'leg',distLabels,'leglocation','northeast');
-%         xlabel('overall region beta correlation');
-%         ylabel('true-estimated distance');
+    
+    case 'twoReg_regress'
+        nCond = 5;      
+        numSim = 100;
+        noise_s = [0:1,5,10:10:50];
+        nPart   = 8;
+        nVox    = 1000;
+        RDMtype = 1; % 1 - same, 0.5 - different; 0 - one has zeros only
+        vararginoptions(varargin,{'nCond','signal','noise_s','RDMtype','numSim'});
         
+        switch RDMtype
+            case 1 % G1 = G2 = 0
+                Gc1=zeros(5);
+                Gc2=zeros(5);
+                D1=zeros(5);
+                D2=zeros(5); 
+            case 2 % G1 = G2
+                v1 = abs(randn(1,nCond*(nCond-1)/2));
+                D1 = rsa_squareRDM(v1);
+                D2 = D1;
+                H = eye(nCond) - 1/nCond;
+                Gc1 = -0.5*H*D1*H';
+                Gc2=Gc1;
+            case 3 % G1 orthogonal G2
+                D=zeros(nCond); D1=D; D2=D;
+                D1(1:2,1:5)=1;
+                D1(3:5,1:2)=1;
+                D2(3:5,3:5)=1;
+                D1(1:nCond+1:end)=0;
+                D2(1:nCond+1:end)=0;
+                H = eye(nCond) - 1/nCond;
+                Gc1 = -0.5*H*D1*H';
+                Gc2 = -0.5*H*D2*H';
+            case 4 % G1 ~= G2
+                v1 = abs(randn(1,nCond*(nCond-1)/2));
+                D1 = rsa_squareRDM(v1);
+                v2 = abs(randn(1,nCond*(nCond-1)/2));
+                D2 = rsa_squareRDM(v2);
+                H = eye(nCond) - 1/nCond;
+                Gc1 = -0.5*H*D1*H';
+                Gc2 = -0.5*H*D2*H';
+        end
+        % calculate true RDM
+        trueRDM(1,:)=rsa_vectorizeRDM(D1);
+        trueRDM(2,:)=rsa_vectorizeRDM(D2);
+        trueRegDist = calcDist(trueRDM); % true reg distance
+        t = trueRDM';
+        tRDM = t(:); % vectorize across two RDMs
+        % make models for data generation
+        M{1}=makeModel('sameRDM',Gc1,nCond);
+        M{2}=makeModel('sameRDM',Gc2,nCond);
+        S.numPart = nPart;
+        S.numVox  = nVox;
+        NN=[]; RR=[];
+        for s=noise_s
+            for n=1:numSim
+                [data(1),partVec,condVec] = pcm_generateData(M{1},M{1}.theta,S,1,1,0); %signal 1, noise 0
+                [data(2),partVec,condVec] = pcm_generateData(M{2},M{2}.theta,S,1,1,0);
+                % add shared noise across regions
+                Z = normrnd(1,0.2,size(data{1},1),2*nVox);
+                g = 1; % scalar
+                P = zeros(2*nVox)+0.5; % voxel covariance matrix
+                P(1:2*nVox+1:end)=ones(2*nVox,1); % 1 on diag
+                Zn = sqrt(g)*Z*sqrtm(P);     % shared noise matrix across reg
+                data{1} = data{1} + s*Zn(:,1:nVox);
+                data{2} = data{2} + s*Zn(:,nVox+1:2*nVox);
+                % predict the multivariate dependency data{1}->data{2}
+                [N.R2_all,N.r_all]      = multiDepend(data{1},data{2},partVec,condVec,'type','all');
+                [N.R2_redA,N.r_redA]    = multiDepend(data{1},data{2},partVec,condVec,'type','reduceA');
+                [N.R2_redAB,N.r_redAB]  = multiDepend(data{1},data{2},partVec,condVec,'type','reduceAB');
+                N.trueRegDist     = trueRegDist;
+                calcRDM           = makeRDM_crossval(data,partVec,condVec);
+                N.calcRegDist     = calcDist(calcRDM);  
+                % dist type labelling
+                N.distType        = [1:4]';
+                N.distLabel(1,:)  = {'correlation'};
+                N.distLabel(2,:)  = {'cosine'};
+                N.distLabel(3,:)  = {'euclidean'};
+                N.distLabel(4,:)  = {'distCorr'};
+                N.sharedNoise     = repmat(s,4,1);
+                N.regCorr         = repmat(corr(data{1}(:),data{2}(:)),4,1);
+                N.numSim          = repmat(n,4,1);
+                NN = addstruct(NN,N);   
+                % RDMs
+                c = calcRDM';
+                cRDM = c(:);
+                R.calcRDM       = cRDM';
+                R.trueRDM       = tRDM';
+                R.sharedNoise = s;
+                RR = addstruct(RR,R);
+            end
+            fprintf('Done %d/%d: \tsimulations for noise level %d.\n',find(s==noise_s),length(noise_s),s);
+        end
+        save(fullfile(baseDir,sprintf('sim_sharedNoise_regress_RDM_type%d',RDMtype)),'-struct','NN');
+        save(fullfile(baseDir,sprintf('sim_sharedNoise_regress_dist_RDM_type%d',RDMtype)),'-struct','RR');
+    case 'regress-dist'
+        nCond = 5;
+        noise_s = [0:1:10];
+        nPart = 8;
+        nVox = 1000;
+        RDMsim = 'diff'; % 1 - same, 0.5 - different; 0 - one has zeros only
+        numDist = 15;
+        vararginoptions(varargin,{'nCond','signal','noise_s','RDMsim','ms'});
+        
+        
+        for t=1:numDist
+            v1 = abs(randn(1,nCond*(nCond-1)/2));
+            D1 = rsa_squareRDM(v1);
+            H = eye(nCond) - 1/nCond;
+            Gc1 = -0.5*H*D1*H';
+            trueRDM(1,:) = rsa_vectorizeRDM(D1);
+            switch RDMsim
+                case 'same'
+                    Gc2=Gc1;
+                    trueRDM(2,:) = trueRDM(1,:);
+                case 'zero'
+                    Gc2=zeros(5,5);
+                    trueRDM(2,:) = zeros(size(trueRDM(1,:)));
+                case 'diff'
+                    v = abs(randn(1,nCond*(nCond-1)/2));
+                    D = rsa_squareRDM(v);
+                    H = eye(nCond) - 1/nCond;
+                    Gc2 = -0.5*H*D*H';
+                    trueRDM(2,:)=rsa_vectorizeRDM(D);
+            end
+            trueRegDist = calcDist(trueRDM);
+            t = trueRDM';
+            tRDM = t(:);
+            % make models for data generation
+            M{1}=makeModel('sameRDM',Gc1,nCond);
+            M{2}=makeModel('sameRDM',Gc2,nCond);
+            S.numPart = nPart;
+            S.numVox  = nVox;
+            NN=[]; RR=[];
+            for s=noise_s
+                for n=1:25
+                    [data(1),partVec,condVec] = pcm_generateData(M{1},M{1}.theta,S,1,1,0); %signal 10, noise 0
+                    [data(2),partVec,condVec] = pcm_generateData(M{2},M{2}.theta,S,1,1,0);
+                    % add shared noise across regions
+                    Z = normrnd(1,0.2,size(data{1},1),2*nVox);
+                    g = 1; % scalar
+                    P = zeros(2*nVox)+0.5; % voxel covariance matrix
+                    P(1:2*nVox+1:end)=ones(2*nVox,1); % 1 on diag
+                    Zn = sqrt(g)*Z*sqrtm(P);     % shared noise matrix across reg
+                    data{1} = data{1} + s*Zn(:,1:nVox);
+                    data{2} = data{2} + s*Zn(:,nVox+1:2*nVox);
+                    
+                    % split data into partitions
+                    part{1} = data{1}(rem(partVec,2)==1,:);
+                    part{2} = data{1}(rem(partVec,2)==0,:);
+                    part{3} = data{2}(rem(partVec,2)==1,:);
+                    part{4} = data{2}(rem(partVec,2)==1,:);
+                    pVec = partVec(1:end/2);
+                    cVec = condVec(1:end/2);
+                    % split RDM estimates
+                    partRDM = makeRDM_crossval(part,pVec,cVec);
+                    X_train = partRDM(1,:)';
+                    Y_train = partRDM(3,:)';
+                    X_test  = partRDM(2,:)';
+                    Y_test  = partRDM(4,:)';
+                    % estimate R2,r
+                    beta = pinv(X_train)*Y_train;
+                    res = Y_test - (X_test.*beta);
+                    SSR = sum(res.^2);
+                    SST = sum(Y_test.^2);
+                    R2 = 1 - SSR/SST;
+                    R.R2 = R2;
+                    R.r  = corr(X_test.*beta,Y_train);
+                    R.beta          = beta;
+                    % estimate dist
+                    estRDM          = makeRDM_crossval(data,partVec,condVec);
+                    calcD           = calcDist(estRDM);
+                    R.estEucD       = calcD(3);
+                    R.estCorrD      = calcD(1);
+                    R.trueEucD      = trueRegDist(3);
+                    R.trueCorrD     = trueRegDist(1);
+                    R.sharedNoise   = s;
+                    R.trueRDM       = tRDM';
+                    calcRDM         = makeRDM_crossval(data,partVec,condVec);
+                    c               = calcRDM';
+                    cRDM            = c(:);
+                    R.estRDM       = cRDM';
+                    trainRDM        = partRDM([1,3],:)';
+                    testRDM         = partRDM([2,4],:)';
+                    trR             = trainRDM(:);
+                    teR             = testRDM(:);
+                    R.trainRDM      = trR(:)';
+                    R.testRDM       = teR(:)';
+                    RR = addstruct(RR,R);
+                end
+                fprintf('Done %d/%d: \tsimulations for noise level %d.\n',find(s==noise_s),length(noise_s),s);
+            end
+        end
+        save(fullfile(baseDir,'regress_dist'),'-struct','RR');
+        keyboard;
+    case 'plot_sharedNoise'
+        RDMsim=0.5;
+        T=load(fullfile(baseDir,sprintf('simulations_sharedNoise_RDMtype_0.5.mat')));
+        R=load(fullfile(baseDir,sprintf('simulations_sharedNoise_dist_RDMtype_0.5.mat')));
+        noise=unique(T.sharedNoise);
+        figure
+        idx=1;
+        for n=noise'
+            D = getrow(R,R.sharedNoise==n);
+            d = mean(D.calcRDM);
+            c = d'*d;
+            subplot(numel(unique(noise)),3,idx); 
+            imagesc(c(1:10,1:10));
+            colorbar;
+            title(sprintf('var1 noise %d',n));
+            subplot(numel(unique(noise)),3,idx+1); 
+            imagesc(c(11:20,11:20));
+            colorbar;
+            title('var2');
+            subplot(numel(unique(noise)),3,idx+2);
+            imagesc(c(1:10,11:20));
+            colorbar;
+            title('cov');
+            p=rsa_vectorizeIPM(c(1:10,1:10));
+            q=rsa_vectorizeIPM(c(11:20,11:20));
+            c_pq = corr(p',q');
+            fprintf('noise %d correlation: %2.1f\n',n,c_pq);
+          %  subplot(numel(unique(noise)),3,idx+3)
+          %  sl=plt.scatter(rsa_vectorizeIPMfull(c(1:10,1:10))',rsa_vectorizeIPMfull(c(1:10,11:20))');
+          %  xlabel('var1'); ylabel('cov'); title(sprintf('slope %2.1f',sl));
+          %  subplot(numel(unique(noise)),5,idx+4)
+          %  sl=plt.scatter(rsa_vectorizeIPMfull(c(11:20,11:20))',rsa_vectorizeIPMfull(c(1:10,11:20))');
+          %  xlabel('var2'); ylabel('cov'); title(sprintf('slope %2.1f',sl));
+            idx=idx+3;
+        end
+        keyboard;
     case 'normalize'
         nCond = 5;     
         D1=randn(nCond);
@@ -630,13 +1054,14 @@ switch(what)
        title('Across regions DIST correlation');
      
     case 'run_job'
-      % rsa_connect('simulateData');
-       %rsa_connect('simulateData','rdmType','sameRDM');
-       %rsa_connect('evaluate');
-       %rsa_connect('evaluate','rdmType','sameRDM');
-       %rsa_connect('simulateData_comb');
-       rsa_connect('evaluate','rdmType','combRDM');
-       
+      rsa_connect('twoReg_sharedNoise','RDMtype',2);
+      fprintf('Done 2\n');
+      rsa_connect('twoReg_sharedNoise','RDMtype',3);
+      fprintf('Done 3\n');
+      rsa_connect('twoReg_sharedNoise','RDMtype',4);
+      fprintf('Done 4\n');
+      
+      
     otherwise
         disp('there is no such case.')
 end
