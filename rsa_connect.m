@@ -333,75 +333,14 @@ switch(what)
         end    
     case 'twoReg'
         nCond = 5;      
-        snr = [0.001,0.005,0.01:0.01:0.1,0.2,0.5,1];
-        nPart = 9;
+        signal = 1;
+        noise = [0,0.01,0.1,0.5,1,5,10];
+        nPart = 8;
         nVox = 1000;
-        RDMsim = 1; % 1 - same, 0.5 - different; 0 - one has zeros only
-        vararginoptions(varargin,{'nCond','signal','snr','RDMsim'});
- 
-        v = abs(randn(1,nCond*(nCond-1)/2));
-        D = rsa_squareRDM(v);
-        H = eye(nCond) - 1/nCond;
-        Gc1 = -0.5*H*D*H';
-        trueRDM(1,:)=rsa_vectorizeRDM(D);
-        switch RDMsim
-            case 1
-                Gc2=Gc1;
-                trueRDM(2,:) = trueRDM(1,:);
-            case 0
-                Gc2=zeros(5,5);
-                trueRDM(2,:) = zeros(size(trueRDM(1,:)));
-            case 0.5
-                v = abs(randn(1,nCond*(nCond-1)/2));
-                D = rsa_squareRDM(v);
-                H = eye(nCond) - 1/nCond;
-                Gc2 = -0.5*H*D*H';
-                trueRDM(2,:)=rsa_vectorizeRDM(D);
-        end
-        trueRegDist = calcDist(trueRDM);
-
-        NN=[]; 
-        for s=snr
-            for n=1:100
-                [data{1},partVec,condVec]    = makePatterns('G',Gc1,'nVox',nVox,'nPart',nPart,'snr',s);
-                [data{2},partVec,condVec]    = makePatterns('G',Gc2,'nVox',nVox,'nPart',nPart,'snr',0.1);
-                
-                N.trueRegDist           = trueRegDist;
-                calcRDM                 = makeRDM_crossval(data,partVec,condVec);
-                N.calcRegDist           = calcDist(calcRDM);
-                % dist type labelling
-                N.distType        = [1:4]';
-                N.distLabel(1,:)  = {'correlation'};
-                N.distLabel(2,:)  = {'cosine'};
-                N.distLabel(3,:)  = {'euclidean'};
-                N.distLabel(4,:)  = {'distCorr'};
-                N.snr1            = repmat(s,4,1);
-                N.snr2            = repmat(10,4,1);
-                N.numSim          = repmat(n,4,1);
-                NN = addstruct(NN,N);
-            end
-        end
-        figure
-        subplot(211)
-        plt.line(NN.snr1,NN.calcRegDist,'split',NN.distType,'leg',distLabels,'leglocation','northeast');
-        xlabel('snr of region with variable snr');
-        ylabel('estimated distance');
-        title(sprintf('two regions one varies snr - type%2.1d of RDMs',RDMsim));   
-        subplot(212)
-        plt.line(NN.snr1,NN.trueRegDist-NN.calcRegDist,'split',NN.distType,'leg',distLabels,'leglocation','northeast');
-        xlabel('snr of region with variable snr');
-        ylabel('true-estimated distance');
-    case 'twoReg_sharedNoise'
-        nCond = 5;      
-        numSim = 100;
-      %  noise_s = [0:0.01:0.09,0.1:0.1:0.8];
-        noise_s = [0:1,5,10:10:50];
-        nPart   = 8;
-        nVox    = 1000;
         RDMtype = 1; % 1 - same, 0.5 - different; 0 - one has zeros only
-        vararginoptions(varargin,{'nCond','signal','noise_s','RDMtype','numSim'});
-        
-        switch RDMtype
+        vararginoptions(varargin,{'nCond','signal','signal','noise','RDMtype'});
+ 
+         switch RDMtype
             case 1 % G1 = G2 = 0
                 Gc1=zeros(5);
                 Gc2=zeros(5);
@@ -437,28 +376,13 @@ switch(what)
         trueRDM(1,:)=rsa_vectorizeRDM(D1);
         trueRDM(2,:)=rsa_vectorizeRDM(D2);
         trueRegDist = calcDist(trueRDM); % true reg distance
-        t = trueRDM';
-        tRDM = t(:); % vectorize across two RDMs
-        % make models for data generation
-        M{1}=makeModel('sameRDM',Gc1,nCond);
-        M{2}=makeModel('sameRDM',Gc2,nCond);
-        S.numPart = nPart;
-        S.numVox  = nVox;
-        NN=[]; RR=[]; DD=[];
-        for s=noise_s
-            for n=1:numSim
-                [data(1),partVec,condVec] = pcm_generateData(M{1},M{1}.theta,S,1,1,0.1); %signal 10, noise 0
-                [data(2),partVec,condVec] = pcm_generateData(M{2},M{2}.theta,S,1,1,0.1);
-               % [data{1},partVec,condVec] = makePatterns('G',M{1}.Ac,'nPart',nPart,'nVox',nVox,'signal',1,'noise',0); %signal 10, noise 0
-               % [data{2},partVec,condVec] = makePatterns('G',M{2}.Ac,'nPart',nPart,'nVox',nVox,'signal',1,'noise',0);
-                % add shared noise across regions
-                Z = normrnd(1,0.2,size(data{1},1),2*nVox);
-                g = 1; % scalar
-                P = zeros(2*nVox)+0.5; % voxel covariance matrix
-                P(1:2*nVox+1:end)=ones(2*nVox,1); % 1 on diag
-                Zn = sqrt(g)*Z*sqrtm(P);     % shared noise matrix across reg
-                data{1} = data{1} + s*Zn(:,1:nVox);
-                data{2} = data{2} + s*Zn(:,nVox+1:2*nVox);
+
+        NN=[]; 
+        for s=noise
+            for n=1:25
+                [data{1},partVec,condVec]    = makePatterns('G',Gc1,'nVox',nVox,'nPart',nPart,'signal',1,'noise',s);
+                [data{2},partVec,condVec]    = makePatterns('G',Gc2,'nVox',nVox,'nPart',nPart,'signal',1,'noise',0.01);
+                
                 % predict the multivariate dependency data{1}->data{2}
                 [R2_all,r_all]      = multiDepend(data{1},data{2},partVec,condVec,'type','all');
                 [R2_redA,r_redA]    = multiDepend(data{1},data{2},partVec,condVec,'type','reduceA');
@@ -470,99 +394,281 @@ switch(what)
                 N.R2_redAB  = repmat(R2_redAB,4,1);
                 N.r_redAB   = repmat(r_redAB,4,1);
                 
-                % distance metrics
-                N.trueRegDist     = trueRegDist;
-                calcRDM           = makeRDM_crossval(data,partVec,condVec);
-                N.calcRegDist     = calcDist(calcRDM);  
+                N.trueRegDist           = trueRegDist;
+                calcRDM                 = makeRDM_crossval(data,partVec,condVec);
+                N.calcRegDist           = calcDist(calcRDM);
                 % dist type labelling
                 N.distType        = [1:4]';
                 N.distLabel(1,:)  = {'correlation'};
                 N.distLabel(2,:)  = {'cosine'};
                 N.distLabel(3,:)  = {'euclidean'};
                 N.distLabel(4,:)  = {'distCorr'};
-                N.sharedNoise     = repmat(s,4,1);
-                N.regCorr         = repmat(corr(data{1}(:),data{2}(:)),4,1);
+                N.snr1            = repmat(s,4,1);
+                N.snr2            = repmat(10,4,1);
                 N.numSim          = repmat(n,4,1);
-                NN = addstruct(NN,N);   
-                % RDMs
-                c = calcRDM';
-                cRDM = c(:);
-                R.calcRDM       = cRDM';
-                R.trueRDM       = tRDM';
-                R.sharedNoise = s;
-                RR = addstruct(RR,R);
+                NN = addstruct(NN,N);
             end
-            fprintf('Done %d/%d: \tsimulations for noise level %d.\n',find(s==noise_s),length(noise_s),s);
+            fprintf('Done %d/%d: \tsimulations for noise level %d.\n',find(s==noise),length(noise),s);
+            
         end
-        save(fullfile(baseDir,sprintf('sim_sharedNoise_RDM_type%d',RDMtype)),'-struct','NN');
-        save(fullfile(baseDir,sprintf('sim_sharedNoise_dist_RDM_type%d',RDMtype)),'-struct','RR');
-    case 'PLOT_sharedNoise_dist'
-        RDMtype = 1;
+        save(fullfile(baseDir,sprintf('sim_noise_RDM_type%d',RDMtype)),'-struct','NN');
+
+%         figure
+%         subplot(211)
+%         plt.line(NN.snr1,NN.calcRegDist,'split',NN.distType,'leg',distLabels,'leglocation','northeast');
+%         xlabel('snr of region with variable snr');
+%         ylabel('estimated distance');
+%         title(sprintf('two regions one varies snr - type%2.1d of RDMs',RDMtyep));   
+%         subplot(212)
+%         plt.line(NN.snr1,NN.trueRegDist-NN.calcRegDist,'split',NN.distType,'leg',distLabels,'leglocation','northeast');
+%         xlabel('snr of region with variable snr');
+%         ylabel('true-estimated distance');
+    case 'PLOT_r'
+        RDMtype=1;
         vararginoptions(varargin,{'RDMtype'});
-        N = load(fullfile(baseDir,sprintf('sim_sharedNoise_RDM_type%d',RDMtype)));
-        R = load(fullfile(baseDir,sprintf('sim_sharedNoise_dist_RDM_type%d',RDMtype)));
+        N = load(fullfile(baseDir,sprintf('sim_noise_RDM_type%d',RDMtype)));
+        
+        N = getrow(N,N.distType==1);
         figure
-        subplot(441)
-        imagesc(rsa_squareRDM(R.trueRDM(1,[1:10]))); colorbar;
-        title('true RDM reg1');
-        subplot(442)
-        imagesc(rsa_squareRDM(R.trueRDM(2,[11:20]))); colorbar;
-        title('true RDM reg2');
-        subplot(443)
-        plt.scatter(N.sharedNoise,N.calcRegDist,'split',N.distType,'leg',distLabels,'style',sCol,'leglocation','northeast');
-        xlabel('shared noise across regions');
-        ylabel('estimated distance');
-        subplot(444)
-        if RDMtype == 1
-            N.trueRegDist = zeros(size(N.trueRegDist));
-        end
-        if RDMtype <3
-            plt.scatter(N.sharedNoise,N.calcRegDist-N.trueRegDist,'split',N.distType,'leg',distLabels,'style',sCol,'leglocation','northeast');
-            hold on;
-            drawline(0,'dir','horz');
-            ylabel('corrected distance -');
-        else
-            plt.scatter(N.sharedNoise,N.calcRegDist./N.trueRegDist,'split',N.distType,'leg',distLabels,'style',sCol,'leglocation','northeast');
-            hold on;
-            drawline(1,'dir','horz');
-            ylabel('corrected distance /');
+        subplot(231)
+        plt.scatter(N.snr1,N.R2_all);
+        title('R2-all');
+        subplot(232)
+        plt.scatter(N.snr1,N.R2_redA);
+        title('R2-redA');
+        subplot(233)
+        plt.scatter(N.snr1,N.R2_redAB);
+        title('R2-redAB');
+        subplot(234)
+        plt.scatter(N.snr1,N.r_all);
+        title('r-all');
+        subplot(235)
+        plt.scatter(N.snr1,N.r_redA);
+        title('r-redA');
+        subplot(236)
+        plt.scatter(N.snr1,N.r_redAB);
+        title('r-redAB');
+        
+            
+    case 'twoReg_sharedNoise'
+        nCond = 5;      
+        numSim = 100;
+      %  noise_s = [0:0.01:0.09,0.1:0.1:0.8];
+        sigma = [0.6:1]; % noise in a region
+        gamma = [0:0.5]; % shared noise across regions 
+        noise_s = [0:1,5,10:10:50];
+        nPart   = 8;
+        nVox    = 1000;
+        RDMtype = 1; % 1 - same, 0.5 - different; 0 - one has zeros only
+        vararginoptions(varargin,{'nCond','signal','noiseType','RDMtype','numSim'});
+        
+        switch RDMtype
+            case 1 % G1 = G2 = 0
+                Gc1=zeros(5);
+                Gc2=zeros(5);
+                D1=zeros(5);
+                D2=zeros(5); 
+            case 2 % G1 = G2
+                v1 = abs(randn(1,nCond*(nCond-1)/2));
+                D1 = rsa_squareRDM(v1);
+                D2 = D1;
+                H = eye(nCond) - 1/nCond;
+                Gc1 = -0.5*H*D1*H';
+                Gc2=Gc1;
+            case 3 % G1 orthogonal G2
+                D=zeros(nCond); D1=D; D2=D;
+                D1(1:2,1:5)=1;
+                D1(3:5,1:2)=1;
+                D2(3:5,3:5)=1;
+                D1(1:nCond+1:end)=0;
+                D2(1:nCond+1:end)=0;
+                H = eye(nCond) - 1/nCond;
+                Gc1 = -0.5*H*D1*H';
+                Gc2 = -0.5*H*D2*H';
+            case 4 % G1 ~= G2
+                v1 = abs(randn(1,nCond*(nCond-1)/2));
+                D1 = rsa_squareRDM(v1);
+                v2 = abs(randn(1,nCond*(nCond-1)/2));
+                D2 = rsa_squareRDM(v2);
+                H = eye(nCond) - 1/nCond;
+                Gc1 = -0.5*H*D1*H';
+                Gc2 = -0.5*H*D2*H';
         end
         
-        t=N.trueRegDist(N.sharedNoise==0);
-        subplot(445)
-        plt.scatter(N.sharedNoise,N.calcRegDist,'split',N.distType,'subset',N.distType==1,'style',style.custom({blue}),'leg',distLabels(1));
-        hold on;
-        drawline(t(1),'dir','horz');
-        title(sprintf('true dist %2.1f',t(1)));
-        subplot(446)
-        plt.scatter(N.sharedNoise,N.calcRegDist,'split',N.distType,'subset',N.distType==2,'style',style.custom({mediumblue}),'leg',distLabels(2));
-        hold on;
-        drawline(t(2),'dir','horz');
-        title(sprintf('true dist %2.1f',t(2)));
-        subplot(447)
-        plt.scatter(N.sharedNoise,N.calcRegDist,'split',N.distType,'subset',N.distType==3,'style',style.custom({mediumred}),'leg',distLabels(3));
-        hold on;
-        drawline(t(3),'dir','horz');
-        title(sprintf('true dist %2.1f',t(3)));
-        subplot(448)
-        plt.scatter(N.sharedNoise,N.calcRegDist,'split',N.distType,'subset',N.distType==2,'style',style.custom({lightblue}),'leg',distLabels(4));
-        hold on;
-        drawline(t(4),'dir','horz');
-        title(sprintf('true dist %2.1f',t(4)));
-        subplot(449)
-        T = getrow(R,R.sharedNoise==0);
+        switch noiseType
+            case 'within'
+                sigma = [0.01,0.1:0.1:1];
+                gamma = 0;
+            case 'between'
+                sigma = 0.7;
+                gamma = [0:0.1:0.6];
+            case 'both'
+                sigma = [0.6:0.1:1];
+                gamma = [0:0.1:0.5];
+        end
+        % calculate true RDM
+        trueRDM(1,:)=rsa_vectorizeRDM(D1);
+        trueRDM(2,:)=rsa_vectorizeRDM(D2);
+        trueRegDist = calcDist(trueRDM); % true reg distance
+        t = trueRDM';
+        tRDM = t(:); % vectorize across two RDMs
+        % make models for data generation
+        M{1}=makeModel('sameRDM',Gc1,nCond);
+        M{2}=makeModel('sameRDM',Gc2,nCond);
+        S.numPart = nPart;
+        S.numVox  = nVox;
+        NN=[]; RR=[]; 
+        for g=gamma
+            for s=sigma
+                for n=1:numSim
+                    [data(1),partVec,condVec] = pcm_generateData(M{1},M{1}.theta,S,1,1,0); %signal 10, noise 0
+                    [data(2),partVec,condVec] = pcm_generateData(M{2},M{2}.theta,S,1,1,0);
+                    % add shared noise across regions
+                    Z = normrnd(0,1,size(data{1},1),2*nVox);
+                    Pw = zeros(nVox); % voxel covariance matrix
+                    Pw(1:nVox+1:end)=ones(nVox,1)*s; % sigma on diag - within reg noise
+                    Ps = zeros(nVox); 
+                    Ps(1:nVox+1:end)=ones(nVox,1)*g; % across reg noise
+                    P = [Pw Ps; Ps Pw];  % across reg var-cov matrix
+                    Zn = Z*sqrtm(P);     % shared noise matrix across reg
+                    data{1} = data{1} + Zn(:,1:nVox);
+                    data{2} = data{2} + Zn(:,nVox+1:2*nVox);
+                    % predict the multivariate dependency data{1}->data{2}
+                    [R2_all,r_all]      = multiDependVox(data{1},data{2},partVec,condVec,'type','all');
+                    [R2_redA,r_redA]    = multiDependVox(data{1},data{2},partVec,condVec,'type','reduceA');
+                    [R2_redAB,r_redAB]  = multiDependVox(data{1},data{2},partVec,condVec,'type','reduceAB');
+                    [R2_G,r_G]  = multiDependCond(data{1},data{2},partVec,condVec);
+                    N.R2_all    = repmat(R2_all,4,1);
+                    N.r_all     = repmat(r_all,4,1);
+                    N.R2_redA   = repmat(R2_redA,4,1);
+                    N.r_redA    = repmat(r_redA,4,1);
+                    N.R2_redAB  = repmat(R2_redAB,4,1);
+                    N.r_redAB   = repmat(r_redAB,4,1);
+                    N.R2_G      = repmat(R2_G,4,1);
+                    N.r_G       = repmat(r_G,4,1);
+                    
+                    % distance metrics
+                    N.trueRegDist     = trueRegDist;
+                    calcRDM           = makeRDM_crossval(data,partVec,condVec);
+                    N.calcRegDist     = calcDist(calcRDM);
+                    % dist type labelling
+                    N.distType        = [1:4]';
+                    N.distLabel(1,:)  = {'correlation'};
+                    N.distLabel(2,:)  = {'cosine'};
+                    N.distLabel(3,:)  = {'euclidean'};
+                    N.distLabel(4,:)  = {'distCorr'};
+                    N.sigma           = repmat(s,4,1);
+                    N.gamma           = repmat(g,4,1);
+                    N.regCorr         = repmat(corr(data{1}(:),data{2}(:)),4,1);
+                    N.numSim          = repmat(n,4,1);
+                    NN = addstruct(NN,N);
+                    % RDMs
+                    c = calcRDM';
+                    cRDM = c(:);
+                    R.calcRDM       = cRDM';
+                    R.trueRDM       = tRDM';
+                    R.sigma = s;
+                    R.gamma = g;
+                    RR = addstruct(RR,R);
+                end
+            end
+            fprintf('Done %d/%d: \tsimulations for noise level %d.\n',find(s==sigma),length(sigma),s);
+        end
+        
+        save(fullfile(baseDir,sprintf('sim_noise_%s_RDM_type%d',noiseType,RDMtype)),'-struct','NN');
+        save(fullfile(baseDir,sprintf('sim_noise_%s_dist_RDM_type%d',noiseType,RDMtype)),'-struct','RR');
+        
+      %  save(fullfile(baseDir,sprintf('sim_sharedNoise_RDM_type%d',RDMtype)),'-struct','NN');
+      %  save(fullfile(baseDir,sprintf('sim_sharedNoise_dist_RDM_type%d',RDMtype)),'-struct','RR');
+    case 'PLOT_sharedNoise_r'
+        RDMtype = 1;
+        noiseType = 'within';
+        vararginoptions(varargin,{'RDMtype','noiseType'});
+        N = load(fullfile(baseDir,sprintf('sim_noise_%s_RDM_type%d',noiseType,RDMtype)));       
+        switch noiseType
+            case 'within'
+                var = 'sigma';
+            case 'between'
+                var = 'gamma';
+        end
+        N = getrow(N,N.distType==1);
+        figure
+        subplot(241)
+        plt.scatter(N.(var),N.r_all); drawline(0,'dir','horz');
+        title('r all');
+        xlabel(sprintf('%s noise',noiseType));
+        subplot(242)
+        plt.scatter(N.(var),N.r_redA); drawline(0,'dir','horz');
+        title('r redA');
+        subplot(243)
+        plt.scatter(N.(var),N.r_redAB); drawline(0,'dir','horz');
+        title('r redAB');
+        subplot(244)
+        plt.scatter(N.(var),N.r_G); drawline(0,'dir','horz');
+        title('r G');
+        subplot(245)
+        plt.scatter(N.(var),N.R2_all); drawline(0,'dir','horz');
+        title('R2 all');
+        subplot(246)
+        plt.scatter(N.(var),N.R2_redA); drawline(0,'dir','horz');
+        title('R2 redA');
+        subplot(247)
+        plt.scatter(N.(var),N.R2_redAB); drawline(0,'dir','horz');
+        title('R2 redAB');
+        subplot(248)
+        plt.scatter(N.(var),N.R2_G); drawline(0,'dir','horz');
+        title('R2 G');   
+    case 'PLOT_sharedNoise_dist'
+        RDMtype = 1;
+        noiseType = 'within';
+        vararginoptions(varargin,{'RDMtype','noiseType'});
+        N = load(fullfile(baseDir,sprintf('sim_noise_%s_RDM_type%d',noiseType,RDMtype)));
+        R = load(fullfile(baseDir,sprintf('sim_noise_%s_dist_RDM_type%d',noiseType,RDMtype)));
+        switch noiseType
+            case 'within'
+                var = 'sigma';
+            case 'between'
+                var = 'gamma';
+        end
+        figure
+        % RDMs
+        subplot(241)
+        imagesc(rsa_squareRDM(R.trueRDM(1,[1:10]))); colorbar;
+        title('true RDM reg1');
+        subplot(242)
+        imagesc(rsa_squareRDM(R.trueRDM(2,[11:20]))); colorbar;
+        title('true RDM reg2');
+        subplot(243)
+        T = getrow(R,R.(var)==max(R.(var)));
         imagesc(rsa_squareRDM(mean(T.calcRDM(:,[1:10])))); colorbar;
-        title('calc RDM1 - noise 0');
-        subplot(4,4,10)
+        title(sprintf('calc RDM1 - noise %2.1f',max(R.(var))));
+        subplot(244)
         imagesc(rsa_squareRDM(mean(T.calcRDM(:,[11:20])))); colorbar;
-        title('calc RDM2 - noise 0');
-        subplot(4,4,13)
-        T = getrow(R,R.sharedNoise==50);
-        imagesc(rsa_squareRDM(mean(T.calcRDM(:,[1:10])))); colorbar;
-        title('calc RDM1 - noise 50');
-        subplot(4,4,14)
-        imagesc(rsa_squareRDM(mean(T.calcRDM(:,[11:20])))); colorbar;
-        title('calc RDM2 - noise 50');
+        title(sprintf('calc RDM2 - noise %2.1f',max(R.(var))));
+        % distance metrics
+        trueDist = N.trueRegDist(1:4);
+        trueDist(isnan(trueDist))=1; % if given nan
+        subplot(245)
+        plt.scatter(N.(var),N.calcRegDist,'split',N.distType,'subset',N.distType==1,'style',style.custom({blue}),'leg',distLabels(1));
+        hold on;
+        drawline(trueDist(1),'dir','horz');
+        title(sprintf('true dist %2.1f',trueDist(1)));
+        xlabel(sprintf('%s noise',noiseType))
+        subplot(246)
+        plt.scatter(N.(var),N.calcRegDist,'split',N.distType,'subset',N.distType==2,'style',style.custom({mediumblue}),'leg',distLabels(2));
+        hold on;
+        drawline(trueDist(2),'dir','horz');
+        title(sprintf('true dist %2.1f',trueDist(2)));
+        subplot(247)
+        plt.scatter(N.(var),N.calcRegDist,'split',N.distType,'subset',N.distType==3,'style',style.custom({mediumred}),'leg',distLabels(3));
+        hold on;
+        drawline(trueDist(3),'dir','horz');
+        title(sprintf('true dist %2.1f',trueDist(3)));
+        subplot(248)
+        plt.scatter(N.(var),N.calcRegDist,'split',N.distType,'subset',N.distType==2,'style',style.custom({lightblue}),'leg',distLabels(4));
+        hold on;
+        drawline(trueDist(4),'dir','horz');
+        title(sprintf('true dist %2.1f',trueDist(4)));
     case 'PLOT_sharedNoise_cov_v1'
         RDMtype = 1;
         vararginoptions(varargin,{'RDMtype'});
@@ -734,8 +840,8 @@ switch(what)
         NN=[]; RR=[];
         for s=noise_s
             for n=1:numSim
-                [data(1),partVec,condVec] = pcm_generateData(M{1},M{1}.theta,S,1,1,0); %signal 1, noise 0
-                [data(2),partVec,condVec] = pcm_generateData(M{2},M{2}.theta,S,1,1,0);
+                [data(1),partVec,condVec] = pcm_generateData(M{1},M{1}.theta,S,1,1,0.1); %signal 1, noise 0
+                [data(2),partVec,condVec] = pcm_generateData(M{2},M{2}.theta,S,1,1,0.1);
                 % add shared noise across regions
                 Z = normrnd(1,0.2,size(data{1},1),2*nVox);
                 g = 1; % scalar
@@ -1074,15 +1180,10 @@ switch(what)
        title('Across regions DIST correlation');
      
     case 'run_job'
-      rsa_connect('twoReg_sharedNoise','RDMtype',1);
-      fprintf('Done 2\n');
-      rsa_connect('twoReg_sharedNoise','RDMtype',2);
-      fprintf('Done 2\n');
-      rsa_connect('twoReg_sharedNoise','RDMtype',3);
-      fprintf('Done 3\n');
-      rsa_connect('twoReg_sharedNoise','RDMtype',4);
-      fprintf('Done 4\n');
-      
+      rsa_connect('twoReg_sharedNoise','noiseType','within','RDMtype',4)
+      fprintf('Done 4 - within\n');
+      rsa_connect('twoReg_sharedNoise','noiseType','between','RDMtype',4)
+      fprintf('Done 4 - between\n');
       
     otherwise
         disp('there is no such case.')
