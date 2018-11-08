@@ -80,7 +80,7 @@ D_A2 = rsa.distanceLDC(A_odd,pVec2,cVec2);
 D_B2 = rsa.distanceLDC(B_odd,pVec2,cVec2);
 
 % estimate A_train->B_train mapping using OLS (for 1st partition)
-beta = pinv(D_A1)*D_B1;
+beta = pinv(D_A1')*D_B1';
 B_pred  = D_A2*beta;
 res     = D_B2 - B_pred; % residuals unaccounted for
 % evaluate prediction of regB (B_pred)
