@@ -9,8 +9,9 @@ distLabels={'corr','cosine','euclidean','distcorr'};
 
 % for plotting
 gray=[120 120 120]/255;
-lightgray=[170 170 170]/255;
-silver=[230 230 230]/255;
+lightgray=[160 160 160]/255;
+lightlightgray=[200 200 200]/255;
+silver=[240 240 240]/255;
 black=[0 0 0]/255;
 blue=[49,130,189]/255;
 mediumblue=[128,231,207]/255;
@@ -19,7 +20,8 @@ red=[222,45,38]/255;
 mediumred=[237,95,76]/255;
 lightred=[252,146,114]/255;
 
-sBW = style.custom({gray,lightgray,black,silver});
+sBW = style.custom({black,gray,lightgray,lightlightgray,silver});
+sBlack = style.custom({gray});
 sCol  = style.custom({blue,mediumblue,mediumred,lightblue});
 s2  = style.custom({gray,lightgray,lightred,silver});
 styTrained_sess=style.custom({red,mediumred,lightred});
@@ -799,7 +801,7 @@ switch(what)
         corrReg = [0:0.1:1];
         corrRDM = 1;
         vararginoptions(varargin,{'nCond','numSim','RDMtype','corrRDM'});
-        
+        NN=[]; RR=[];
         for t=corrRDM % looping for RDMtype=4 only (different correlation of RDMs)
             switch RDMtype
                 case 1 % G1 = G2 = 0
@@ -844,8 +846,7 @@ switch(what)
             M{2}=makeModel('sameRDM',G2,nCond);
             S.numPart = nPart;
             S.numVox  = nVox;
-            NN=[]; RR=[];
-            
+           
             for r=corrReg
                 for v=varReg
                     for n=1:numSim
@@ -894,9 +895,10 @@ switch(what)
                         R.RDMtype   = RDMtype;
                         RR = addstruct(RR,R);
                     end
-                    fprintf('Done wNoise %d/%d \tbNoise %d/%d.\n',find(v==varReg),length(varReg),find(r==corrReg),length(corrReg));
+                    fprintf('Done %d/%d corrRDM wNoise %d/%d \tbNoise %d/%d.\n',find(t==corrRDM),length(corrRDM),find(v==varReg),length(varReg),find(r==corrReg),length(corrReg));
                 end
             end
+            fprintf('Done %d / %d corrRDM\n\n\n',find(t==corrRDM),length(corrRDM));
         end
         
         keyboard;
@@ -911,19 +913,49 @@ switch(what)
         % within Noise
         T1=getrow(T,T.corrReg==0);
         figure
-        plt.scatter(T1.varReg,T1.calcRegDist,'subset',T1.distType==1,'style',sBW);
+        subplot(122)
+        plt.scatter(T1.varReg,T1.calcRegDist,'subset',T1.distType==2,'style',sBW);
         title('cosine distance');
         drawline(1,'dir','horz');
         xlabel('within region noise');
         ylabel('estimated distance');
         
-        figure
+        subplot(121)
         plt.scatter(T1.varReg,T1.calcRegDist,'subset',T1.distType==3,'style',sBW);
         title('euclidean distance');
         drawline(0,'dir','horz');
         xlabel('within region noise');
         ylabel('estimated distance');
-        keyboard;
+    case 'plot_withinNoise_allRDMtype'
+        RDMtype=[1:4];
+        distType=2; % 1 corr, 2 cosine, 3 euclidean, 4 distCorr
+        vararginoptions(varargin,{'distType'});
+        TT=[];
+        for r=RDMtype
+            T = load(fullfile(baseDir,sprintf('simulation_dist_RDMtype%d',r)));
+            if ~isfield(T,{'corrRDM'})
+                T.corrRDM = ones(size(T.distType))*r;
+            end
+            TT=addstruct(TT,T);
+        end
+        
+        T1 = getrow(TT,TT.corrReg==0);
+        figure
+        plt.line(T1.varReg,T1.calcRegDist,'split',T1.corrRDM,'subset',T1.distType==distType,'style',sBW);
+    case 'plot_betweenNoise_allRDMtype'
+        RDMtype=[1:4];
+        distType=2; % 1 corr, 2 cosine, 3 euclidean, 4 distCorr
+        vararginoptions(varargin,{'distType','RDMtype'});
+        TT=[];
+        for r=RDMtype
+            T = load(fullfile(baseDir,sprintf('simulation_dist_RDMtype%d',r)));
+            if ~isfield(T,{'corrRDM'})
+                T.corrRDM = ones(size(T.distType))*r;
+            end
+            T=getrow(T,ismember(T.varReg,[0,20,50,80,100]));
+            figure
+            plt.line(T.corrReg,T.calcRegDist,'split',T.varReg,'style',sBW,'subset',T.distType==distType);
+        end
         
     case 'twoReg_regress'
         nCond = 5;      
