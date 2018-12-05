@@ -977,7 +977,7 @@ switch(what)
         RDMtype=[1,2];
         distType=2; % 1 corr, 2 cosine, 3 euclidean, 4 distCorr
         vararginoptions(varargin,{'distType','RDMtype'});
-       % TT=[];
+
        var = {'calcDist_ncv','calcDist_cv','calcDist_cv2_bet'};
        figure
        for r=RDMtype
@@ -987,26 +987,23 @@ switch(what)
                subplot(length(var),length(RDMtype),(v-1)*2+r)
                plt.line(T.corrReg,T.(var{v}),'split',T.varReg,'style',sBW,'subset',T.distType==distType);
            end
-           %  TT=addstruct(TT,T);
        end
     case 'plot_betweenNoise_example2'
         RDMtype=4;
         distType=2; % 1 corr, 2 cosine, 3 euclidean, 4 distCorr
-        var = {'calcDist_ncv','calcDist_cv','calcDist_cv2_bet'};
+        var = {'calcDist_cv','calcDist_cv2_bet'};
         corrRDM = [0.2,0.5,0.8];
         vararginoptions(varargin,{'distType','RDMtype','corrRDM'});
-
-        for r=RDMtype
-            T = load(fullfile(baseDir,sprintf('simulation_dist_RDMtype%d',r)));
-            T=getrow(T,ismember(T.varReg,[0,20,50,80,100]));
-            for i=corrRDM
-            end
-            TT=addstruct(TT,T);
-        end
-        keyboard;
-        figure
-        plt.line(TT.corrReg,TT.calcDist_ncv,'split',TT.varReg,'style',sBW,'subset',TT.distType==distType & TT.corrRDM==0.8);
         
+        T = load(fullfile(baseDir,sprintf('simulation_dist_RDMtype%d',RDMtype)));
+        T=getrow(T,ismember(T.varReg,[0,20,50,80,100]));
+        figure
+        for c=1:length(corrRDM)
+            for v=1:length(var)
+                subplot(length(var),length(corrRDM),(v-1)*3+c)
+                plt.line(T.corrReg,T.(var{v}),'split',T.varReg,'style',sBW,'subset',T.distType==distType & T.corrRDM==corrRDM(c));
+            end
+        end
     case 'twoReg_regress'
         nCond = 5;      
         numSim = 100;
@@ -1604,7 +1601,47 @@ switch(what)
     rsa_connect('twoReg_noise','RDMtype',4,'corrRDM',[0.2,0.5,0.8]);
     fprintf('Done 4\n\n\n');
 
-      
+    case 'KL_div'
+        % noiseless example
+        % different Gs
+        % consider cosine, distanceCorr, euclidean, KL
+        condN=5;
+        theta=1;
+        nPart=1;
+        nVox=1000;
+        figPlot=1;
+        vararginoptions(varargin,{'condN','figPlot'});
+        
+        % first make Gs of interest
+        G = makeGs(condN);
+        if figPlot
+            figure
+            for i=1:6
+                subplot(3,2,i)
+                imagesc(G{i});
+            end
+        end
+        % create a model and data for each G
+        for i=1:size(G,2)
+            M.Ac = G{i};
+            M.numGparams = 1;
+            M.theta      = 1;
+            M.type       = 'feature';
+            
+            S.numPart = nPart;
+            S.numVox  = nVox;
+            [data,partVec,condVec] = pcm_generateData(M,theta,S,1,1,0);
+            % remove the mean from the data
+            data_rm{i} = bsxfun(@minus,data{1},mean(data{1},1));
+            C{i} = cov(data_rm{i}');
+            G_data{i} = data_rm{i}*data_rm{i}';
+            mu{i} = mean(data_rm{i},2);
+        end
+        
+        D = KLdivergence(C,C,mean(data_rm{1},2),mean(data_rm{1},2),1);
+        C = data_rm*data_rm';
+        D = KLdivergence(C,C,zeros(size(data_rm{1},1),1),zeros(size(data_rm{1},1),1),1);
+        
     otherwise
         disp('there is no such case.')
 end
@@ -1612,6 +1649,22 @@ end
 
 %  % Local functions
 
+function G = makeGs(condN);
+% makes specific Gs
+% G1 & G3 rank-deficient
+% G2  - G1 + other dim
+% G4 - G3 + other dim
+U1 = normrnd(0,1,[condN,3]);
+G{1} = U1*U1';
+U2 = [U1 normrnd(0,0.5,[condN,2])];
+G{2} = U2*U2';
+U3 = normrnd(0,1,[condN,2]);
+G{3} = U3*U3';
+U4 = [normrnd(0,0.5,[condN,3]) U3];
+G{4} = U4*U4';
+G{5} = zeros(5);
+G{6} = eye(5);
+end
 function M = makeModel(rdmType,D,nCond)
 M.type       = 'feature';
 %M.numGparams = 1;

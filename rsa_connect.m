@@ -1601,7 +1601,55 @@ switch(what)
     rsa_connect('twoReg_noise','RDMtype',4,'corrRDM',[0.2,0.5,0.8]);
     fprintf('Done 4\n\n\n');
 
-      
+    case 'KL_div'
+        % noiseless example
+        % different Gs
+        % consider cosine, distanceCorr, euclidean, KL
+        condN=5;
+        theta=1;
+        nPart=1;
+        nVox=1000;
+        figPlot=1;
+        vararginoptions(varargin,{'condN','figPlot'});
+        
+        % first make Gs of interest
+        G = makeGs(condN);
+        if figPlot
+            figure
+            for i=1:6
+                subplot(3,2,i)
+                imagesc(G{i});
+            end
+        end
+        % create a model and data for each G
+        for i=1:size(G,2)
+            M.Ac = G{i};
+            M.numGparams = 1;
+            M.theta      = 1;
+            M.type       = 'feature';
+            
+            S.numPart = nPart;
+            S.numVox  = nVox;
+            [data,partVec,condVec] = pcm_generateData(M,theta,S,1,1,0);
+            % remove the mean from the data
+            data_rm{i} = bsxfun(@minus,data{1},mean(data{1},1));
+            C{i} = cov(data_rm{i}');
+            G_data{i} = data_rm{i}*data_rm{i}';
+            mu{i} = mean(data_rm{i},2);
+            RDM(i,:)=pdist(data_rm{i});
+        end
+        
+        % initialize distance for KL divergence
+        D = zeros(size(G,2));
+        cosDist = zeros(size(G,2));
+        for j=1:size(G,2)
+            for k=1:size(G,2)
+                D(j,k)=KLdivergence(C{j},C{k},mu{j},mu{k});
+                cosDist(j,k)=pdist(RDM([j,k],:),'cosine');
+                distCorr(j,k)=rsa_calcDistCorrRDMs(RDM([j,k],:));
+            end
+        end
+        keyboard;
     otherwise
         disp('there is no such case.')
 end
@@ -1609,6 +1657,22 @@ end
 
 %  % Local functions
 
+function G = makeGs(condN);
+% makes specific Gs
+% G1 & G3 rank-deficient
+% G2  - G1 + other dim
+% G4 - G3 + other dim
+U1 = normrnd(0,1,[condN,3]);
+G{1} = U1*U1';
+U2 = [normrnd(0,0.5,[condN,2]) U1];
+G{2} = U2*U2';
+U3 = normrnd(0,1,[condN,2]);
+G{3} = U3*U3';
+U4 = [normrnd(0,0.5,[condN,3]) U3];
+G{4} = U4*U4';
+G{5} = zeros(5);
+G{6} = eye(5);
+end
 function M = makeModel(rdmType,D,nCond)
 M.type       = 'feature';
 %M.numGparams = 1;
