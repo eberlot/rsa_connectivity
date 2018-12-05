@@ -9,8 +9,9 @@ distLabels={'corr','cosine','euclidean','distcorr'};
 
 % for plotting
 gray=[120 120 120]/255;
-lightgray=[170 170 170]/255;
-silver=[230 230 230]/255;
+lightgray=[160 160 160]/255;
+lightlightgray=[200 200 200]/255;
+silver=[240 240 240]/255;
 black=[0 0 0]/255;
 blue=[49,130,189]/255;
 mediumblue=[128,231,207]/255;
@@ -19,7 +20,7 @@ red=[222,45,38]/255;
 mediumred=[237,95,76]/255;
 lightred=[252,146,114]/255;
 
-sBW = style.custom({gray,lightgray,black,silver});
+sBW = style.custom({black,gray,lightgray,lightlightgray,silver});
 sBlack = style.custom({gray});
 sCol  = style.custom({blue,mediumblue,mediumred,lightblue});
 s2  = style.custom({gray,lightgray,lightred,silver});
@@ -448,8 +449,7 @@ switch(what)
         title('r-redA');
         subplot(236)
         plt.scatter(N.snr1,N.r_redAB);
-        title('r-redAB');
-        
+        title('r-redAB'); 
             
     case 'twoReg_sharedNoise'
         nCond = 5;      
@@ -793,10 +793,9 @@ switch(what)
         nCond = 5;
         nPart = 8;
         nVox = 1000;
-        corrRDM = 0.1; % used for RDMtype==4
-        numSim = 100;
+        numSim = 50;
         RDMtype = 1;
-        varReg = [0,1,10:10:100];
+        varReg = [0,1,5,10:10:50];
         corrReg = [0:0.1:1];
         corrRDM = 1;
         vararginoptions(varargin,{'nCond','numSim','RDMtype','corrRDM'});
@@ -865,9 +864,14 @@ switch(what)
                         data{2} = data{2} + Zn(:,nVox+1:2*nVox);
                         
                         % distance metrics
-                        N.trueRegDist     = trueRegDist;
-                        calcRDM           = makeRDM_crossval(data,partVec,condVec);
-                        N.calcRegDist     = calcDist(calcRDM);
+                        N.trueDist     = trueRegDist;
+                        calcRDM        = makeRDM_average(data,condVec);
+                        N.calcDist_ncv = calcDist(calcRDM);
+                        calcRDM        = makeRDM_crossval(data,partVec,condVec);
+                        N.calcDist_cv  = calcDist(calcRDM);
+                        calcRDMcross   = makeRDM_splithalf(data,partVec,condVec);
+                        [N.calcDist_cv2_with, N.calcDist_cv2_bet] = calcDist_splithalf(calcRDMcross); % crossvalidated version
+                        % do a crossvalidated version
                         % dist type labelling
                         N.distType        = [1:4]';
                         N.distLabel(1,:)  = {'correlation'};
@@ -900,58 +904,108 @@ switch(what)
             fprintf('Done %d / %d corrRDM\n\n\n',find(t==corrRDM),length(corrRDM));
         end
         
-        keyboard;
         save(fullfile(baseDir,sprintf('simulation_dist_RDMtype%d',RDMtype)),'-struct','NN');
         save(fullfile(baseDir,sprintf('simulation_RDM_RDMtype%d',RDMtype)),'-struct','RR');
     case 'plot_withinNoise'
         RDMtype=1;
-        vararginoptions(varargin,{'RDMtype'});
+        distType=2;
+        vararginoptions(varargin,{'RDMtype','distType'});
         
         T = load(fullfile(baseDir,sprintf('simulation_dist_RDMtype%d',RDMtype)));
         
-        % within Noise
+        % within Noise - cosine only
         T1=getrow(T,T.corrReg==0);
         figure
-        plt.scatter(T1.varReg,T1.calcRegDist,'subset',T1.distType==2,'style',sBW);
-        title('cosine distance');
+        subplot(311)
+        plt.scatter(T1.varReg,T1.calcDist_ncv,'subset',T1.distType==distType,'style',sBW,'split',T1.corrRDM);
+        title('cosine distance - not crossval');
+        drawline(1,'dir','horz');
+        xlabel('within region noise');
+        ylabel('estimated distance');
+        subplot(312)
+        plt.scatter(T1.varReg,T1.calcDist_cv,'subset',T1.distType==distType,'style',sBW,'split',T1.corrRDM);
+        title('cosine distance - crossval');
+        drawline(1,'dir','horz');
+        xlabel('within region noise');
+        ylabel('estimated distance');
+        subplot(313)
+        plt.scatter(T1.varReg,T1.calcDist_cv2_bet,'subset',T1.distType==distType,'style',sBW,'split',T1.corrRDM);
+        title('cosine distance - double crossval');
         drawline(1,'dir','horz');
         xlabel('within region noise');
         ylabel('estimated distance');
         
-        figure
-        plt.scatter(T1.varReg,T1.calcRegDist,'subset',T1.distType==3,'style',sBW);
-        title('euclidean distance');
-        drawline(0,'dir','horz');
-        xlabel('within region noise');
-        ylabel('estimated distance');
+%         subplot(121)
+%         plt.scatter(T1.varReg,T1.calcRegDist,'subset',T1.distType==3,'style',sBW);
+%         title('euclidean distance');
+%         drawline(0,'dir','horz');
+%         xlabel('within region noise');
+%         ylabel('estimated distance');
     case 'plot_withinNoise_allRDMtype'
-        RDMtype=[1:4];
+        RDMtype=[1,2,4];
         distType=2; % 1 corr, 2 cosine, 3 euclidean, 4 distCorr
-        vararginoptions(varargin,{'distType'});
+        vararginoptions(varargin,{'distType','RDMtype'});
         TT=[];
         for r=RDMtype
             T = load(fullfile(baseDir,sprintf('simulation_dist_RDMtype%d',r)));
-            if ~isfield(T,{'corrRDM'})
-                T.corrRDM = ones(size(T.distType))*r;
+            if r==1
+                T.corrRDM=zeros(size(T.corrRDM));
             end
             TT=addstruct(TT,T);
         end
-        
         T1 = getrow(TT,TT.corrReg==0);
         figure
-        plt.line(T1.varReg,T1.calcRegDist,'split',T1.corrRDM,'subset',T1.distType==distType,'style',sBlack);
-    case 'plot_betweenNoise_allRDMtype'
-        RDMtype=[1:4];
+        subplot(311)
+        plt.line(T1.varReg,T1.calcDist_ncv,'subset',T1.distType==2,'split',T1.corrRDM,'style',sBW);
+        title('cosine distance - not crossval');
+        drawline(1,'dir','horz');
+        xlabel('within region noise');
+        ylabel('estimated distance');
+        subplot(312)
+        plt.line(T1.varReg,T1.calcDist_cv,'subset',T1.distType==2,'split',T1.corrRDM,'style',sBW);
+        title('cosine distance - crossval');
+        drawline(1,'dir','horz');
+        xlabel('within region noise');
+        ylabel('estimated distance');
+        subplot(313)
+        plt.line(T1.varReg,T1.calcDist_cv2_bet,'subset',T1.distType==2,'split',T1.corrRDM,'style',sBW);
+        title('cosine distance - double crossval');
+        drawline(1,'dir','horz');
+        xlabel('within region noise');
+        ylabel('estimated distance');
+    case 'plot_betweenNoise_example1'
+        RDMtype=[1,2];
         distType=2; % 1 corr, 2 cosine, 3 euclidean, 4 distCorr
-        vararginoptions(varargin,{'distType'});
-        TT=[];
+        vararginoptions(varargin,{'distType','RDMtype'});
+       % TT=[];
+       var = {'calcDist_ncv','calcDist_cv','calcDist_cv2_bet'};
+       figure
+       for r=RDMtype
+           T = load(fullfile(baseDir,sprintf('simulation_dist_RDMtype%d',r)));
+           T=getrow(T,ismember(T.varReg,[0,10,30,50]));
+           for v=1:length(var)
+               subplot(length(var),length(RDMtype),(v-1)*2+r)
+               plt.line(T.corrReg,T.(var{v}),'split',T.varReg,'style',sBW,'subset',T.distType==distType);
+           end
+           %  TT=addstruct(TT,T);
+       end
+    case 'plot_betweenNoise_example2'
+        RDMtype=4;
+        distType=2; % 1 corr, 2 cosine, 3 euclidean, 4 distCorr
+        var = {'calcDist_ncv','calcDist_cv','calcDist_cv2_bet'};
+        corrRDM = [0.2,0.5,0.8];
+        vararginoptions(varargin,{'distType','RDMtype','corrRDM'});
+
         for r=RDMtype
             T = load(fullfile(baseDir,sprintf('simulation_dist_RDMtype%d',r)));
-            if ~isfield(T,{'corrRDM'})
-                T.corrRDM = ones(size(T.distType))*r;
+            T=getrow(T,ismember(T.varReg,[0,20,50,80,100]));
+            for i=corrRDM
             end
             TT=addstruct(TT,T);
         end
+        keyboard;
+        figure
+        plt.line(TT.corrReg,TT.calcDist_ncv,'split',TT.varReg,'style',sBW,'subset',TT.distType==distType & TT.corrRDM==0.8);
         
     case 'twoReg_regress'
         nCond = 5;      
@@ -1213,7 +1267,141 @@ switch(what)
         D2_meanSub  = bsxfun(@minus,D2,mean(D2,2));
         D1_standar = bsxfun(@times,D1,1./std(D1,[],2));
         
+    case 'twoReg_predict'
+        nCond = 5;      
+        numSim = 30;
+      %  noise_s = [0:0.01:0.09,0.1:0.1:0.8];
+        sigma = [0.6:1]; % noise in a region
+        gamma = [0:0.5]; % shared noise across regions 
+        noise_s = [0:1,5,10:10:50];
+        nPart   = 8;
+        nVox    = 1000;
+        RDMtype = 1; % 1 - same, 0.5 - different; 0 - one has zeros only
+        noiseType = 'within';
+        vararginoptions(varargin,{'nCond','signal','noiseType','RDMtype','numSim'});
         
+        switch RDMtype
+            case 1 % G1 = G2 = 0
+                Gc1=zeros(5);
+                Gc2=zeros(5);
+                D1=zeros(5);
+                D2=zeros(5); 
+            case 2 % G1 = G2
+                v1 = abs(randn(1,nCond*(nCond-1)/2));
+                D1 = rsa_squareRDM(v1);
+                D2 = D1;
+                H = eye(nCond) - 1/nCond;
+                Gc1 = -0.5*H*D1*H';
+                Gc2=Gc1;
+            case 3 % G1 orthogonal G2
+                D=zeros(nCond); D1=D; D2=D;
+                D1(1:2,1:5)=1;
+                D1(3:5,1:2)=1;
+                D2(3:5,3:5)=1;
+                D1(1:nCond+1:end)=0;
+                D2(1:nCond+1:end)=0;
+                H = eye(nCond) - 1/nCond;
+                Gc1 = -0.5*H*D1*H';
+                Gc2 = -0.5*H*D2*H';
+            case 4 % G1 ~= G2
+                v1 = abs(randn(1,nCond*(nCond-1)/2));
+                D1 = rsa_squareRDM(v1);
+                v2 = abs(randn(1,nCond*(nCond-1)/2));
+                D2 = rsa_squareRDM(v2);
+                H = eye(nCond) - 1/nCond;
+                Gc1 = -0.5*H*D1*H';
+                Gc2 = -0.5*H*D2*H';
+        end
+        
+        switch noiseType
+            case 'within'
+                sigma = [0.01,0.1:0.1:1];
+                gamma = 0;
+            case 'between'
+                sigma = 0.7;
+                gamma = [0:0.1:0.6];
+            case 'both'
+                sigma = [0.6:0.1:1];
+                gamma = [0:0.1:0.5];
+        end
+        % calculate true RDM
+        trueRDM(1,:)=rsa_vectorizeRDM(D1);
+        trueRDM(2,:)=rsa_vectorizeRDM(D2);
+       % trueRegDist = calcDist(trueRDM); % true reg distance
+       % t = trueRDM';
+       % tRDM = t(:); % vectorize across two RDMs
+       % true_R2=1-(sum((t(:,1)-t(:,2)).^2)/sum(t(:,2).^2));
+       % true_r=corr(t);
+        
+        % make models for data generation
+        M{1}=makeModel('sameRDM',Gc1,nCond);
+        M{2}=makeModel('sameRDM',Gc2,nCond);
+        S.numPart = nPart;
+        S.numVox  = nVox;
+        NN=[];
+        for g=gamma
+            for s=sigma
+                for n=1:numSim
+                    [data(1),partVec,condVec] = pcm_generateData(M{1},M{1}.theta,S,1,1,0); %signal 10, noise 0
+                    [data(2),partVec,condVec] = pcm_generateData(M{2},M{2}.theta,S,1,1,0);
+                    % add shared noise across regions
+                    Z = normrnd(0,1,size(data{1},1),2*nVox);
+                    Pw = zeros(nVox); % voxel covariance matrix
+                    Pw(1:nVox+1:end)=ones(nVox,1)*s; % sigma on diag - within reg noise
+                    Ps = zeros(nVox); 
+                    Ps(1:nVox+1:end)=ones(nVox,1)*g; % across reg noise
+                    P = [Pw Ps; Ps Pw];  % across reg var-cov matrix
+                    Zn = Z*sqrtm(P);     % shared noise matrix across reg
+                    data{1} = data{1} + Zn(:,1:nVox);
+                    data{2} = data{2} + Zn(:,nVox+1:2*nVox);
+                    
+                    % decompose Gs into eigVal*sqrt(eigVec)
+                    G1 = pcm_estGCrossval(data{1},partVec,condVec);
+                    G1 = G1./trace(G1);
+                    G2 = pcm_estGCrossval(data{2},partVec,condVec);
+                    G2 = G2./trace(G2);
+
+                    [T,predG,N.cor,N.cosDist]=predictG(G1,G2);
+
+                    N.T      = rsa_vectorizeIPMfull(T);
+                    N.G_pred = rsa_vectorizeIPMfull(predG);
+                    N.G1_est = rsa_vectorizeIPMfull(G1);
+                    N.G2_est = rsa_vectorizeIPMfull(G2);
+                    N.G1_true = rsa_vectorizeIPMfull(Gc1);
+                    N.G2_true = rsa_vectorizeIPMfull(Gc2);
+                    % distance metrics
+                 %   N.true_cosDist    = trueRegDist(2);
+                 %   N.calc_cosDist    = pdist([t1;t2],'cosine');
+                    N.sigma           = s;
+                    N.gamma           = g;
+                    N.numSim          = n;
+                    NN = addstruct(NN,N);
+                    % RDMs
+                %    c = calcRDM';
+                %    cRDM = c(:);
+                %    R.calcRDM       = cRDM';
+                %    R.trueRDM       = tRDM';
+                %    R.sigma = s;
+                %    R.gamma = g;
+                %    RR = addstruct(RR,R);
+                end
+                fprintf('Done %d/%d: \tsimulations for noise level %d.\n',find(s==sigma),length(sigma),s);
+            end
+            fprintf('Done %d/%d\n\n',find(g==gamma),length(gamma));
+        end
+        
+        keyboard;
+        % save
+        figure
+        subplot(141);
+        imagesc(D1_est);
+        subplot(142);
+        imagesc(D2_est);
+        subplot(143);
+        imagesc(y);
+        subplot(144);
+        imagesc(D2_pred);
+     
     case 'PLOT_dist_hist'
         simuType='sameRDM'; % sameRDM or randomRDM, combRDM
         noiseLevels=[0,0.5,1];
@@ -1407,18 +1595,15 @@ switch(what)
         keyboard;
        
     case 'run_job'
-    %  rsa_connect('twoReg_sharedNoise','noiseType','within','RDMtype',1)
-    %  fprintf('Done 1 - within\n');
-    %  rsa_connect('twoReg_sharedNoise','noiseType','between','RDMtype',1)
-    %  fprintf('Done 1 - between\n');
-    %  rsa_connect('twoReg_sharedNoise','noiseType','within','RDMtype',2)
-    %  fprintf('Done 2 - within\n');
-    %  rsa_connect('twoReg_sharedNoise','noiseType','between','RDMtype',2)
-    %  fprintf('Done 2 - between\n');
-      rsa_connect('twoReg_sharedNoise','noiseType','within','RDMtype',4)
-      fprintf('Done 4 - within\n');
-      rsa_connect('twoReg_sharedNoise','noiseType','between','RDMtype',4)
-      fprintf('Done 4 - between\n');
+    %  rsa_connect('twoReg_noise','RDMtype',1);
+    %  fprintf('Done 1\n\n\n');
+    %  rsa_connect('twoReg_noise','RDMtype',2);
+    %  fprintf('Done 2\n\n\n');
+    %rsa_connect('twoReg_noise','RDMtype',3);
+    %fprintf('Done 3\n\n\n');
+    rsa_connect('twoReg_noise','RDMtype',4,'corrRDM',[0.2,0.5,0.8]);
+    fprintf('Done 4\n\n\n');
+
       
     otherwise
         disp('there is no such case.')
@@ -1458,6 +1643,31 @@ dist(3,:)  = pdist(rdm,'euclidean');
 dist(4,:) = rsa_calcDistCorrRDMs(rdm);
 
 end
+function [distW, distB] = calcDist_splithalf(rdm)
+% calculate distance metric from the input
+% crossvalidated version - within and between dataset
+% N datasets, D distances
+% input: N x D matrix
+% dist types:
+% 1) correlation
+% 2) cosine
+% 3) euclidean
+% 4) distance correlation
+
+tmp  = rsa_squareRDM(pdist(rdm,'correlation'));
+distW(1,:) = mean([tmp(1,2) tmp(3,4)]);
+distB(1,:) = mean([tmp(1,4) tmp(2,3)]);
+tmp  = rsa_squareRDM(pdist(rdm,'cosine'));
+distW(2,:) = mean([tmp(1,2) tmp(3,4)]);
+distB(2,:) = mean([tmp(1,4) tmp(2,3)]);
+tmp  = rsa_squareRDM(pdist(rdm,'euclidean'));
+distW(3,:) = mean([tmp(1,2) tmp(3,4)]);
+distB(3,:) = mean([tmp(1,4) tmp(2,3)]);
+tmp  = rsa_squareRDM(rsa_calcDistCorrRDMs(rdm));
+distW(4,:) = mean([tmp(1,2) tmp(3,4)]);
+distB(4,:) = mean([tmp(1,4) tmp(2,3)]);
+
+end
 
 function rdm   = makeRDM_average(data,condVec)
 % function rdm = makeRDM_average(data,condVec)
@@ -1487,6 +1697,24 @@ for st=1:numDataset
     % calculate crossvalidated squared Euclidean distances
     rdm(st,:)=rsa.distanceLDC(data{st},partVec,condVec);
 end;
+
+end
+function rdm   = makeRDM_splithalf(data,partVec,condVec)
+% function rdm   = makeRDM_splithalf(data,partVec,condVec)
+% makes crossvalidated RDM matrix for even / odd split
+% rdms 1-2 from Dataset 1; 3-4 from Dataset 2
+% split even and odd runs
+idx(:,1) = mod(partVec,2)==1; 
+idx(:,2) = mod(partVec,2)==0;
+numDataset=size(data,2);
+count=1;
+for st=1:numDataset
+    for p=1:2 % partition
+        % calculate crossvalidated squared Euclidean distances
+        rdm(count,:)=rsa.distanceLDC(data{st}(idx(:,p),:),partVec(idx(:,p)),condVec(idx(:,p)));
+        count = count+1;
+    end;
+end
 
 end
 
