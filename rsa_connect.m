@@ -20,12 +20,12 @@ red=[222,45,38]/255;
 mediumred=[237,95,76]/255;
 lightred=[252,146,114]/255;
 
-sBW = style.custom({black,gray,lightgray,lightlightgray,silver});
-sBlack = style.custom({gray});
-sCol  = style.custom({blue,mediumblue,mediumred,lightblue});
-s2  = style.custom({gray,lightgray,lightred,silver});
-styTrained_sess=style.custom({red,mediumred,lightred});
-styUntrained_sess=style.custom({blue,mediumblue,lightblue});
+%sBW = style.custom({black,gray,lightgray,lightlightgray,silver});
+% sBlack = style.custom({gray});
+% sCol  = style.custom({blue,mediumblue,mediumred,lightblue});
+% s2  = style.custom({gray,lightgray,lightred,silver});
+% styTrained_sess=style.custom({red,mediumred,lightred});
+% styUntrained_sess=style.custom({blue,mediumblue,lightblue});
 
 switch(what)
     
