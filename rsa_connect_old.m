@@ -1,4 +1,4 @@
-function varargout = rsa_connect(what,varargin)
+function varargout = rsa_connect_old(what,varargin)
 
 baseDir = '/Volumes/MotorControl/data/rsa_connectivity';
 % example RDM distance matrix
@@ -20,12 +20,12 @@ red=[222,45,38]/255;
 mediumred=[237,95,76]/255;
 lightred=[252,146,114]/255;
 
-sBW = style.custom({black,gray,lightgray,lightlightgray,silver});
-sBlack = style.custom({gray});
-sCol  = style.custom({blue,mediumblue,mediumred,lightblue});
-s2  = style.custom({gray,lightgray,lightred,silver});
-styTrained_sess=style.custom({red,mediumred,lightred});
-styUntrained_sess=style.custom({blue,mediumblue,lightblue});
+%sBW = style.custom({black,gray,lightgray,lightlightgray,silver});
+% sBlack = style.custom({gray});
+% sCol  = style.custom({blue,mediumblue,mediumred,lightblue});
+% s2  = style.custom({gray,lightgray,lightred,silver});
+% styTrained_sess=style.custom({red,mediumred,lightred});
+% styUntrained_sess=style.custom({blue,mediumblue,lightblue});
 
 switch(what)
     
@@ -1636,12 +1636,20 @@ switch(what)
             C{i} = cov(data_rm{i}');
             G_data{i} = data_rm{i}*data_rm{i}';
             mu{i} = mean(data_rm{i},2);
+            RDM(i,:)=pdist(data_rm{i});
         end
         
-        D = KLdivergence(C,C,mean(data_rm{1},2),mean(data_rm{1},2),1);
-        C = data_rm*data_rm';
-        D = KLdivergence(C,C,zeros(size(data_rm{1},1),1),zeros(size(data_rm{1},1),1),1);
-        
+        % initialize distance for KL divergence
+        D = zeros(size(G,2));
+        cosDist = zeros(size(G,2));
+        for j=1:size(G,2)
+            for k=1:size(G,2)
+                D(j,k)=KLdivergence(C{j},C{k},mu{j},mu{k});
+                cosDist(j,k)=pdist(RDM([j,k],:),'cosine');
+                distCorr(j,k)=rsa_calcDistCorrRDMs(RDM([j,k],:));
+            end
+        end
+        keyboard;
     otherwise
         disp('there is no such case.')
 end
@@ -1656,7 +1664,7 @@ function G = makeGs(condN);
 % G4 - G3 + other dim
 U1 = normrnd(0,1,[condN,3]);
 G{1} = U1*U1';
-U2 = [U1 normrnd(0,0.5,[condN,2])];
+U2 = [normrnd(0,0.5,[condN,2]) U1];
 G{2} = U2*U2';
 U3 = normrnd(0,1,[condN,2]);
 G{3} = U3*U3';

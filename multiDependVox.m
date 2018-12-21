@@ -1,4 +1,4 @@
-function [R2,r] = multiDependVox(regA,regB,partVec,condVec,varargin);
+function [R2] = multiDependVox(regA,regB,partVec,condVec,varargin)
 %function [R2,r] = multiDependVox(regA,regB,partVec,condVec,varargin);
 % calculates the multivariate dependency of voxel patterns in regA and regB
 % 1) splits regA and regB patterns across runs
@@ -72,6 +72,9 @@ for i=1:nPart
     B_rsh(partVec==i,:) = B(:,:,i);
 end
 
+% pre-allocate r and R2
+r=zeros(nPart,1);
+R2=zeros(nPart,1);
 for i=1:nPart     
     % split regA into train and test
     switch type % take all voxels from regB or reduced dimensions
@@ -82,17 +85,17 @@ for i=1:nPart
             B_test  = B_rsh(partVec==i,:);
         case 'reduceA'
             [u,s,v] = svd(A_rsh(partVec~=i,:));              % reduce regA train set using svd
-            A_train = u*s(:,[1:numDim]);                         % reduced A_train dimension
-            A_test  = A_rsh(partVec==i,:)*v(:,[1:numDim]);   % reduced A_test (using same svd dimensions)
+            A_train = u*s(:,1:numDim);                         % reduced A_train dimension
+            A_test  = A_rsh(partVec==i,:)*v(:,1:numDim);   % reduced A_test (using same svd dimensions)
             B_train = B_rsh(partVec~=i,:);
             B_test  = B_rsh(partVec==i,:);         
          case 'reduceAB'
             [u,s,v] = svd(A_rsh(partVec~=i,:));          
-            A_train = u*s(:,[1:numDim]);                     
-            A_test  = A_rsh(partVec==i,:)*v(:,[1:numDim]); 
+            A_train = u*s(:,1:numDim);                     
+            A_test  = A_rsh(partVec==i,:)*v(:,1:numDim); 
             [u,s,v] = svd(B_rsh(partVec~=i,:));  
-            B_train = u*s(:,[1:numDim]);   
-            B_test  = B_rsh(partVec==i,:)*v(:,[1:numDim]);   
+            B_train = u*s(:,1:numDim);   
+            B_test  = B_rsh(partVec==i,:)*v(:,1:numDim);   
     end
     % estimate A_train->B_train mapping using OLS
     beta = pinv(A_train)*B_train;
@@ -103,7 +106,9 @@ for i=1:nPart
     R2(i)   = 1-(trace(res*res')/trace(B_test*B_test')); % 1 - SSR/SST
 end
 
-r = mean(r);
-R2 = mean(R2);
+%r = mean(r);
+%R2 = mean(R2);
+%r = 1-mean(r);
+R2 = 1-mean(R2);
 
 end
