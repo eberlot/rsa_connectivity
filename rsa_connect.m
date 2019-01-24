@@ -1,6 +1,7 @@
 function varargout = rsa_connect(what,varargin)
 
 baseDir = '/Volumes/MotorControl/data/rsa_connectivity';
+codeDir = '/Users/Eva/Documents/MATLAB/projects/rsa_connectivity';
 % example RDM distance matrix
 %load(fullfile(baseDir,'RDM.mat'));
 
@@ -12,29 +13,47 @@ lightgray=[160 160 160]/255;
 lightlightgray=[200 200 200]/255;
 silver=[240 240 240]/255;
 black=[0 0 0]/255;
+blue=[49,130,189]/255;
+lightblue=[158,202,225]/255;
+red=[222,45,38]/255;
+lightred=[252,146,114]/255;
+sAll = style.custom({black,gray,lightlightgray,red,lightred,blue});
 
 c1=[39 38 124]/255;
 c2=[140 140 185]/255;
 c3=[249 191 193]/255;
-
+c1=[0 0 200]/255;
 sBW = style.custom({black,gray,lightgray,silver});
 sB  = style.custom({c1,c2,c3});
+
 switch(what)
 
     case 'run_simulation'
         nCond = 5;
         nPart = 8;
-        nVox = 1000;
-        numSim = 50;
+        nVox = 100;
+        numSim = 500;
         %varReg = [0,1,10,60];
-        varReg = [0,1,5,10:5:30,60,90];
+        varReg = [0,1,5,10:5:30];
         corrReg = [0:0.1:0.9];
         %corrReg = [0,0.1,0.5,0.9];
-        type=3; % type 1: G1=G2 ~= G3; type 2: G1~=G2~=G3 (but dist(G2-G1)<dist(G3-G1))
-        vararginoptions(varargin,{'nCond','numSim','RDMtype','corrRDM','type'});
-        NNN=[]; RR=[];
+        type=1; 
+        noiseType='within';
+        vararginoptions(varargin,{'nCond','numSim','RDMtype','corrRDM','type','noiseType','distCalc'});
+        NN=[];
         
-        [G,D] = makeGs(nCond,type); 
+        switch noiseType
+            case 'within'
+                varReg = [0.1:0.5:5,6:1:10,12:2:20,25:5:40,60:20:100];
+                corrReg = 0;
+            case 'between'
+                varReg = 80;
+                corrReg = [0:0.1:0.9];
+            case 'both'
+                varReg  = [0:0.5:5,6:1:10,12:2:20];
+                corrReg = [0:0.1:0.9];
+        end
+        [G,D] = makeGs(nCond,type);
         %  prepare model
         nRDM = size(G,2);
         for i=1:nRDM
@@ -44,83 +63,288 @@ switch(what)
         % other details for data generation
         S.numPart = nPart;
         S.numVox  = nVox;
-        [T.trueDist,T.reg1,T.reg2,T.distType] = calcDist(trueRDM); % true reg distance - save T
+        % calculate true distances
+        [T.trueDist,T.reg1,T.reg2,T.distType] = calcTrueDist(trueRDM);
         for r=corrReg
             for v=varReg
                 for n=1:numSim
                     for i=1:nRDM
-                        keyboard;
-                      %  [data(i),partVec,condVec] = pcm_generateData(M{i},M{i}.theta,S,1,1,0); %signal 1, noise 0
-                        [data{i},partVec,condVec] = makePatterns('G',M{i}.Ac,'signal',10,'noise',0,'nPart',S.numPart,'nVox',S.numVox); %signal 1, noise 0
+                        [data{i},partVec,condVec] = makePatterns('G',M{i}.Gc,'signal',1,'nPart',S.numPart,'nVox',S.numVox); %signal 1, noise 0
+                        V{i} = zeros(size(trueRDM,2));
                     end
                     % add shared noise across regions
-                    if v~=0
-                        data = addSharedNoise(data,v,r);
-                    end
-                    NN=[];
-                    for split=1:2
+                    data = addSharedNoise(data,v,r);
+                    for distType=1:5
+                        if distType==4
+                            for i=1:nRDM
+                                [V{i},~,~]=covariance_dist(data{i},partVec,condVec);
+                                V{i} = pcm_makePD(V{i});
+                                V{i} = abs(V{i});
+                            end
+                        end
                         % splithalf or not
-                        for rdm=1:2 % type of rdm
-                            % calculate RDMs, distances between them
-                            % non-cross, crossval, correlation, cosine
-                            if split==1
-                        %         [N.calcDist,N.reg1,N.reg2,N.distType] = calcRDM_Dist(data,partVec,condVec,rdm);
-                                calcRDM = makeRDM(data,partVec,condVec,rdm);
-                                [N.calcDist,N.reg1,N.reg2,N.distType] = calcDist(calcRDM);
-                            else
-                                calcRDM = makeRDM_splithalf(data,partVec,condVec,rdm);
-                                [N.calcDist,N.reg1,N.reg2,N.distType] = calcDist_splithalf(calcRDM); % crossvalidated version
-                            end
-                            % all other info
-                            sizeS = size(N.reg1,1);
-                            N.RDMtype    = repmat(rdm,sizeS,1);
-                            N.splitHalf  = repmat(split-1,sizeS,1); %0 or 1
-                            NN = addstruct(NN,N);
-                            % RDMs
-                            R.calcRDM   = calcRDM;
-                            if split==1
-                                R.trueRDM   = trueRDM;
-                            else
-                                R.trueRDM   = [repmat(trueRDM(1,:),2,1);...
-                                               repmat(trueRDM(2,:),2,1);...
-                                               repmat(trueRDM(3,:),2,1);...
-                                               repmat(trueRDM(4,:),2,1)];
-                            end
-                            nReg        = size(calcRDM,1);
-                            R.RDMtype   = (1:nReg)';
-                            R.splitHalf = repmat(split-1,nReg,1);
-                            R.varReg    = repmat(v,nReg,1);
-                            R.corrReg   = repmat(r,nReg,1);
-                            R.covReg    = repmat(r*v,nReg,1);
-                            RR = addstruct(RR,R);
-                        end; % rdm (non-crossval, crossval, correlation, cos)
-                    end; % splithalf - 0 or 1
-                                        
-                    % here add the Anzellotti transformation
-                    [calcDistN,reg1,reg2,distType] = anzellottiDist(data,partVec,condVec);
-                    NN.calcDist = [NN.calcDist; calcDistN];
-                    NN.reg1     = [NN.reg1; reg1];
-                    NN.reg2     = [NN.reg2; reg2];
-                    NN.distType = [NN.distType; distType];
-                    sizeN =size(calcDistN,1);
-                    NN.splitHalf = [NN.splitHalf;ones(sizeN,1)];
-                    NN.RDMtype  = [NN.RDMtype; zeros(sizeN,1)];
-                    sizeAll     = sizeS*rdm*split + sizeN;
-                    % add other info
-                    NN.varReg     = repmat(v,sizeAll,1);
-                    NN.corrReg    = repmat(r,sizeAll,1);
-                    NN.covReg     = repmat(r*v,sizeAll,1);
-                    NN.numSim     = repmat(n,sizeAll,1);
-                    NNN=addstruct(NNN,NN);
+                        % calculate RDMs, distances between them
+                        [N.calcDist,N.reg1,N.reg2,N.distType] = calcDistAll(data,partVec,condVec,distType,V);
+                        sizeAll      = size(N.calcDist,1);
+                        N.varReg     = repmat(v,sizeAll,1);
+                        N.corrReg    = repmat(r,sizeAll,1);
+                        N.covReg     = repmat(r*v,sizeAll,1);
+                        N.numSim     = repmat(n,sizeAll,1);
+                        NN=addstruct(NN,N);
+                    end
                 end; % number of simulations
                 fprintf('%d.',find(v==varReg));
             end; % within-reg
             fprintf('\nDone %d/%d\n',find(r==corrReg),numel(corrReg));
         end; % across-reg
         
-        save(fullfile(baseDir,sprintf('simulation_dist_type%d_new',type)),'-struct','NNN');
-        save(fullfile(baseDir,sprintf('simulation_RDM_type%d_new',type)),'-struct','RR');
-        save(fullfile(baseDir,sprintf('simulation_truth_type%d_new',type)),'T','trueRDM');
+        save(fullfile(baseDir,sprintf('simulation_dist_noise_%s_type%d', noiseType,type)),'-struct','NN');
+        save(fullfile(baseDir,sprintf('simulation_truth_noise_%s_type%d',noiseType,type)),'T','trueRDM');
+        
+        % lineplot(NN.varReg,NN.calcDist,'subset',NN.reg2==3,'errorfcn','std','split',NN.distType)
+        % pivottable(NN.distType,NN.varReg,NN.calcDist,'std','subset',NN.reg2==4 & NN.varReg<6)
+        % pivottable(NN.distType,NN.varReg,NN.calcDist,'mean','subset',NN.reg2==4 & NN.varReg<6)
+    case 'plot_within'
+        noiseType='within';
+        distCalc='squared';
+        vararginoptions(varargin,{'distCalc'});
+        % choose style
+        
+        D=load(fullfile(baseDir,sprintf('simulation_dist_noise_%s_dist_%s', noiseType,distCalc)));
+        load(fullfile(baseDir,sprintf('simulation_truth_noise_%s_dist_%s',noiseType,distCalc)));
+        
+        legend = {'RDM-corr-reg2','cRDM-corr-reg2','cRDM-split-corr-reg2',...
+            'RDM-corr-reg3','cRDM-corr-reg3','cRDM-split-corr-reg3',...
+            'RDM-corr-reg4','cRDM-corr-reg4','cRDM-split-corr-reg4'}
+        keyboard;
+        D=getrow(D,ismember(D.varReg,[0:1:20]));
+        figure
+        subplot(311)       
+        color     = {c1,c1,c1,c2,c2,c2,c3,c3,c3};
+        linestyle   = {'-','--','-.'};
+        markertype  = {'o','v','^'};
+
+        lineplot(D.varReg,D.calcDist,'subset',D.distType<4,'errorfcn','std',...
+            'split',[D.reg2 D.distType ],'style_shade','linecolor',color,'linestyle',linestyle,...
+            'markersize',4,'markercolor',color,'markerfill',color,'markertype',markertype,...
+            'errorcolor',color,'shadecolor',color,'leg',legend,'leglocation','southeast');
+        xlabel('within region noise');
+        ylabel('estimated dist (level 2)');
+        hold on;
+        drawline(T.trueDist(1),'dir','horz','color',c1);
+        drawline(T.trueDist(2),'dir','horz','color',c2);
+        drawline(T.trueDist(3),'dir','horz','color',c3);
+        title('correlation distances');
+
+        subplot(312)
+        color     = {c1,c1,c2,c2,c3,c3};
+        linestyle   = {'--','-.'};
+        markertype  = {'v','^'};
+        legend = {'cRDM-cosine-reg2','cRDM-split-cosine-reg2',...
+            'cRDM-cosine-reg3','cRDM-split-cosine-reg3',...
+            'cRDM-cosine-reg4','cRDM-split-cosine-reg4'};         
+        lineplot(D.varReg,D.calcDist,'subset',D.distType>3&D.distType<6,'errorfcn','std',...
+            'split',[D.reg2 D.distType ],'style_shade','linecolor',color,'linestyle',linestyle,...
+                     'markersize',4,'markercolor',color,'markerfill',color,'markertype',markertype,...
+                     'errorcolor',color,'shadecolor',color,'leg',legend,'leglocation','southeast');
+        xlabel('within region noise');
+        ylabel('estimated dist (level 2)');
+        hold on;
+        drawline(T.trueDist(4),'dir','horz','color',c1);
+        drawline(T.trueDist(5),'dir','horz','color',c2);
+        drawline(T.trueDist(6),'dir','horz','color',c3);
+        title('cosine distances');
+        
+        subplot(313)
+        legend = {'multiDepend-reg2','multiDepend-reg3','multiDepend-reg4'};
+        
+        color     = {c1,c2,c3};
+        linestyle   = {'-.'};
+        markertype  = {'^'};
+        lineplot(D.varReg,D.calcDist,'subset',D.distType==6,'errorfcn','std',...
+            'split',[D.reg2 D.distType ],'style_shade','linecolor',color,'linestyle',linestyle,...
+                     'markersize',4,'markercolor',color,'markerfill',color,'markertype',markertype,...
+                     'errorcolor',color,'shadecolor',color,'leg',legend,'leglocation','southeast');
+         xlabel('within region noise');
+        ylabel('estimated dist (level 2)');
+        title('multivariate dependence (Anzellotti)');
+
+    case 'calc_confusability'    
+        noiseType='within';
+        type=1;
+        vararginoptions(varargin,{'type','noiseType'});
+        % choose style
+        legLabel = {'RDM-corr','cRDM-cos','cRDM-cos-sqrt','cRDM-cos-prewh','multiDepend'};
+        color     = {blue,black,lightgray,lightlightgray,red,};
+        linestyle   = {'-','-','-.','--','-'};
+        markertype  = {'o','o','^','v','o'};
+        switch noiseType
+            case 'within'
+                metric='varReg';
+            case 'between'
+                metric='corrReg';
+        end
+        
+        figure
+        D=load(fullfile(baseDir,sprintf('simulation_dist_noise_%s_type%d', noiseType,type)));
+        D=getrow(D,D.varReg<=40);
+        CC=[];
+        for i=unique(D.(metric))'
+            for j=1:max(D.distType)
+                T=getrow(D,D.(metric)==i & D.distType==j);
+                dist1=T.calcDist(T.reg2==2);
+                dist2=T.calcDist(T.reg2==3);
+                dist3=T.calcDist(T.reg2==4);
+                C.confus=1-sum(dist1<dist2 & dist2<dist3)/length(dist1);
+                C.distType=j;
+                C.(metric)=i;
+                CC=addstruct(CC,C);
+            end
+        end
+        lineplot(CC.(metric),CC.confus,'split',CC.distType,'style_thickline',...
+            'linecolor',color,'linestyle',linestyle,...
+            'markersize',6,'markercolor',color,'markerfill',color,'markertype',markertype,...
+            'errorcolor',color,'shadecolor',color,'leg',legLabel);
+        drawline(5/6,'dir','horz','linestyle','--');
+       % title(sprintf('%s',distCalc{c}));
+        xlabel(sprintf('%s region noise',noiseType));
+        ylabel('Confusability');
+    %    pivottable(D.distType,D.reg2,D.calcDist,'mean','subset',D.varReg<6);
+    case 'calc_confusability_both'
+         noiseType='both';
+        distCalc='ssqrt';
+        vararginoptions(varargin,{'distCalc','noiseType'});
+        % choose style
+        legLabel = {'RDM-corr','cRDM-corr','cRDM-cross-corr','cRDM-cos','cRDM-cross-cos','multiDepend'};
+        color     = {black,lightgray,lightlightgray,red,lightred,blue};
+        linestyle   = {'-','--','-.','--','-.','-.'};
+        markertype  = {'o','v','^','v','^','^'};
+        
+        TT=load(fullfile(baseDir,sprintf('simulation_dist_noise_%s_dist_%s', noiseType,distCalc)));
+        T1=getrow(TT,ismember(TT.varReg,[1,20]));
+        figure
+        uV = unique(T1.varReg);
+        CC=[];
+        
+        for c=uV'
+            D=getrow(T1,T1.varReg==c);
+            for i=unique(D.corrReg)'
+                for j=1:max(D.distType)
+                    T=getrow(D,D.corrReg==i & D.distType==j);
+                    dist1=T.calcDist(T.reg2==2);
+                    dist2=T.calcDist(T.reg2==3);
+                    dist3=T.calcDist(T.reg2==4);
+                    C.confus=1-sum(dist1<dist2 & dist2<dist3)/length(dist1);
+                    C.distType=j;
+                    C.corrReg=i;
+                    C.varReg=c;
+                    CC=addstruct(CC,C);
+                end
+            end
+        end
+        figure
+            lineplot(CC.corrReg,CC.confus,'split',CC.distType,'subset',CC.varReg==20,'style_thickline',...
+                     'linecolor',color,'linestyle',linestyle,...
+                     'markersize',6,'markercolor',color,'markerfill',color,'markertype',markertype,...
+                     'errorcolor',color,'shadecolor',color,'leg',legLabel);
+            drawline(5/6,'dir','horz','linestyle','--');
+            title(sprintf('%s',distCalc{c}));
+            xlabel(sprintf('%s region noise',noiseType));
+            ylabel('Confusability');
+            figure
+            lineplot(CC.corrReg,CC.confus,'split',[CC.distType CC.varReg],'style_thickline',...
+                     'linecolor',color,'linestyle',linestyle,...
+                     'markersize',6,'markercolor',color,'markerfill',color,'markertype',markertype,...
+                     'errorcolor',color,'shadecolor',color,'leg',legLabel);
+            drawline(5/6,'dir','horz','linestyle','--');
+            title(sprintf('%s',distCalc{c}));
+            xlabel(sprintf('%s region noise',noiseType));
+            ylabel('Confusability');
+    case 'plot_between'
+        noiseType='between';
+        distCalc='squared';
+        vararginoptions(varargin,{'distCalc'});
+        % choose style
+        
+        D=load(fullfile(baseDir,sprintf('simulation_dist_noise_%s_dist_%s', noiseType,distCalc)));
+        load(fullfile(baseDir,sprintf('simulation_truth_noise_%s_dist_%s',noiseType,distCalc)));
+    
+        figure
+        subplot(311)
+        color     = {c1,c1,c1,c2,c2,c2,c3,c3,c3};
+        linestyle   = {'-','--','-.'};
+        markertype  = {'o','v','^'};
+        legend = {'RDM-corr-reg2','cRDM-corr-reg2','cRDM-split-corr-reg2',...
+            'RDM-corr-reg3','cRDM-corr-reg3','cRDM-split-corr-reg3',...
+            'RDM-corr-reg4','cRDM-corr-reg4','cRDM-split-corr-reg4'};
+        lineplot(D.corrReg,D.calcDist,'subset',D.distType<4,'errorfcn','std',...
+            'split',[D.reg2 D.distType ],'style_thickline','linecolor',color,'linestyle',linestyle,...
+                     'markersize',8,'markercolor',color,'markerfill',color,'markertype',markertype,...
+                     'errorcolor',color,'shadecolor',color,'leg',legend,'leglocation','southeast');
+        xlabel('within region noise');
+        ylabel('estimated dist (level 2)');
+        hold on;
+        drawline(T.trueDist(1),'dir','horz','color',c1);
+        drawline(T.trueDist(2),'dir','horz','color',c2);
+        drawline(T.trueDist(3),'dir','horz','color',c3);
+        title('correlation distances');
+        
+        subplot(312)
+        color     = {c1,c1,c2,c2,c3,c3};
+        linestyle   = {'--','-.'};
+        markertype  = {'v','^'};
+        legend = {'cRDM-cosine-reg2','cRDM-split-cosine-reg2',...
+            'cRDM-cosine-reg3','cRDM-split-cosine-reg3',...
+            'cRDM-cosine-reg4','cRDM-split-cosine-reg4'};
+        lineplot(D.corrReg,D.calcDist,'subset',D.distType>3&D.distType<6,'errorfcn','std',...
+            'split',[D.reg2 D.distType ],'style_thickline','linecolor',color,'linestyle',linestyle,...
+                     'markersize',8,'markercolor',color,'markerfill',color,'markertype',markertype,...
+                     'errorcolor',color,'shadecolor',color,'leg',legend,'leglocation','southeast');
+        xlabel('within region noise');
+        ylabel('estimated dist (level 2)');
+        hold on;
+        drawline(T.trueDist(4),'dir','horz','color',c1);
+        drawline(T.trueDist(5),'dir','horz','color',c2);
+        drawline(T.trueDist(6),'dir','horz','color',c3);
+        title('cosine distances');
+        
+        subplot(313)
+        color     = {c1,c2,c3};
+        linestyle   = {'-.'};
+        markertype  = {'^'};
+        legend = {'Anzellotti-reg2','Anzellotti-reg3','Anzellotti-reg4'};
+        lineplot(D.corrReg,D.calcDist,'subset',D.distType==6,'errorfcn','std',...
+            'split',[D.reg2 D.distType ],'style_thickline','linecolor',color,'linestyle',linestyle,...
+                     'markersize',8,'markercolor',color,'markerfill',color,'markertype',markertype,...
+                     'errorcolor',color,'shadecolor',color,'leg',legend,'leglocation','southeast');
+        xlabel('within region noise');
+        ylabel('estimated dist (level 2)');
+        title('multivariate dependence (Anzellotti)');
+    case 'plot_between_multi'
+        noiseType='both';
+        distCalc='ssqrt';
+        vararginoptions(varargin,{'distCalc'});
+        % choose style
+        
+        D=load(fullfile(baseDir,sprintf('simulation_dist_noise_%s_dist_%s', noiseType,distCalc)));
+        load(fullfile(baseDir,sprintf('simulation_truth_noise_%s_dist_%s',noiseType,distCalc)));
+    
+        T = getrow(D,ismember(D.varReg,[1,20]));
+        color     = {black,lightlightgray,red,lightred,blue};
+        linestyle   = {'-','-','-','-','-','--','--','--','--','--','-.','-.','-.','-.','-.'};
+        markertype  = {'o','o','o','o','o','v','v','v','v','v','^','^','^','^','^'};
+        
+        figure
+        lineplot(T.corrReg,T.calcDist,'subset',T.reg2==3 & ismember(T.distType,[1,3,4,5,6]),...
+            'split',[T.varReg T.distType],'style_thickline','linecolor',color,'linestyle',linestyle,...
+                     'markersize',6,'markercolor',color,'markerfill',color,'markertype',markertype,...
+                     'errorcolor',color,'shadecolor',color);
+        subplot(132)
+        lineplot(T.corrReg,T.calcDist,'subset',T.reg2==3 & T.distType==2,'split',T.varReg,'style_thickline');
+        subplot(133)
+        lineplot(T.corrReg,T.calcDist,'subset',T.reg2==3 & T.distType==5,'split',T.varReg,'style_thickline');
+        keyboard;
+    
     case 'evaluate'
         type=3;
         vararginoptions(varargin,{'type'});
@@ -129,10 +353,10 @@ switch(what)
         
         EE=[];
         range = [2,2,1];
-        for split=1:2
-            uRDM = unique(D.RDMtype(D.splitHalf==split-1));
+        for s=1:2
+            uRDM = unique(D.RDMtype(D.splitHalf==s-1));
             for rdm=1:length(uRDM)
-                D1 = getrow(D,D.RDMtype==uRDM(rdm) & D.splitHalf==split-1);
+                D1 = getrow(D,D.RDMtype==uRDM(rdm) & D.splitHalf==s-1);
                 for i=unique(D1.distType)' % each distType
                     for c1=unique(D1.corrReg)' % correlation
                         for c2=unique(D1.varReg)' % variance
@@ -172,7 +396,7 @@ switch(what)
                             E.varReg    = c2;
                             E.corrReg   = c1;
                             E.distType  = i;
-                            E.split     = split-1;
+                            E.splitHalf = s-1;
                             E.RDMtype   = uRDM(rdm);
                             EE=addstruct(EE,E);
                         end
@@ -233,24 +457,24 @@ switch(what)
         save(fullfile(baseDir,'eval_tmp'),'-struct','EE');
     case 'plot_withinNoise'
         type=1;
-        split=0;
+        splitHalf=0;
         distType=1;
         vararginoptions(varargin,{'type','split','RDMtype','distType'});
         D = load(fullfile(baseDir,sprintf('simulation_dist_type%d_new',type)));
         
-        T1 = getrow(D,D.corrReg==0 & D.splitHalf==split & D.distType==distType);
+        T1 = getrow(D,D.corrReg==0 & D.splitHalf==splitHalf & D.distType==distType);
         figure
         plt.scatter(T1.varReg,T1.calcDist,'subset',T1.reg1==1&T1.reg2==3,'split',T1.RDMtype,'style',sBW);
       % plt.scatter(T1.varReg,T1.calcDist,'subset',T1.reg1==1&T1.reg2==3 & T1.RDMtype==1,'style',sBW);
     case 'plot_withinNoise_histogram'
         type=3;
-        split=0;
+        splitHalf=0;
         distType=1;
         RDMtype=1;
         vararginoptions(varargin,{'type','split','RDMtype','distType'});
         D = load(fullfile(baseDir,sprintf('simulation_dist_type%d_new',type)));
         
-        T1 = getrow(D,D.corrReg==0 & D.splitHalf==split & D.distType==distType & D.RDMtype==RDMtype);
+        T1 = getrow(D,D.corrReg==0 & D.splitHalf==splitHalf & D.distType==distType & D.RDMtype==RDMtype);
         unVar = unique(T1.varReg);
         for i=unVar'
             figure
@@ -262,14 +486,14 @@ switch(what)
         end
     case 'plot_betweenNoise'
         type=1;
-        split=0;
+        splitHalf=0;
         RDMtype=1;
         vararginoptions(varargin,{'distType','type','split','RDMtype'});
 
        for r=RDMtype
            D = load(fullfile(baseDir,sprintf('simulation_dist_type%d_new',type)));
          %  D=getrow(D,ismember(D.varReg,[10,30,60,90]) & D.splitHalf==split & D.RDMtype==RDMtype & D.reg1==2 & D.reg2==3);
-           D=getrow(D, D.splitHalf==split & D.RDMtype==RDMtype & D.reg1==1 & D.reg2==4);
+           D=getrow(D, D.splitHalf==splitHalf & D.RDMtype==RDMtype & D.reg1==1 & D.reg2==4);
            figure
            for v=1:2 % for each distance
                subplot(1,3,v)
@@ -280,13 +504,13 @@ switch(what)
        end
     case 'plot_betweenNoise_histogram'
         type=3;
-        split=0;
+        splitHalf=0;
         distType=1;
         RDMtype=2;
         vararginoptions(varargin,{'type','split','RDMtype','distType'});
         D = load(fullfile(baseDir,sprintf('simulation_dist_type%d_new',type)));
         
-        T1 = getrow(D,D.varReg==10 & D.splitHalf==split & D.distType==distType & D.RDMtype==RDMtype);
+        T1 = getrow(D,D.varReg==10 & D.splitHalf==splitHalf & D.distType==distType & D.RDMtype==RDMtype);
         cReg = unique(T1.corrReg);
         for i=cReg'
             figure
@@ -298,12 +522,12 @@ switch(what)
         end
     case 'plot_evaluate_within'
         type=3;
-        split=0;
+        splitHalf=0;
         RDMtype=2;
         vararginoptions(varargin,{'type','split','RDMtype','distType'});
         D = load(fullfile(baseDir,sprintf('evaluation_type%d_new',type)));
         
-        D=getrow(D,D.corrReg==0 & D.split==split & (D.RDMtype==RDMtype | D.RDMtype==0));
+        D=getrow(D,D.corrReg==0 & D.split==splitHalf & (D.RDMtype==RDMtype | D.RDMtype==0));
         figure
         subplot(131)
         plt.line(D.varReg,D.confus,'split',D.distType,'style',sBW);
@@ -319,13 +543,13 @@ switch(what)
         xlabel('Within-region noise');
     case 'plot_evaluate_across_var'
         type=3;
-        split=0;
+        splitHalf=0;
         RDMtype=2;
         distType=1;
         vararginoptions(varargin,{'type','split','RDMtype','distType'});
         D = load(fullfile(baseDir,sprintf('evaluation_type%d_new',type)));
         
-        D=getrow(D,D.split==split & D.RDMtype==RDMtype & D.distType==distType);
+        D=getrow(D,D.split==splitHalf & D.RDMtype==RDMtype & D.distType==distType);
         D=getrow(D,ismember(D.varReg,[10,20,30,60]));
         figure
         subplot(131)
@@ -342,13 +566,13 @@ switch(what)
         xlabel('within-region noise');
     case 'plot_evaluate_across_distType'
         type=3;
-        split=1;
+        splitHalf=1;
         RDMtype=2;
         varReg=10;
         vararginoptions(varargin,{'type','split','RDMtype','distType','varReg'});
         D = load(fullfile(baseDir,sprintf('evaluation_type%d_new',type)));
         
-        D=getrow(D,D.split==split & (D.RDMtype==RDMtype | D.RDMtype==0) & D.varReg==varReg);
+        D=getrow(D,D.split==splitHalf & (D.RDMtype==RDMtype | D.RDMtype==0) & D.varReg==varReg);
        % D=getrow(D,ismember(D.varReg,[10,30,60,90]));
         figure
         subplot(131)
@@ -375,30 +599,30 @@ switch(what)
         D=getrow(D,D.RDMtype==RDMtype & D.varReg==varReg);
         figure
         subplot(131)
-        plt.line(D.corrReg,D.confus,'split',[D.split,D.distType],'style',sBW);
+        plt.line(D.corrReg,D.confus,'split',[D.splitHalf,D.distType],'style',sBW);
         ylabel('Confusability');
         xlabel('within-region noise');
         subplot(132)
-        plt.line(D.corrReg,abs(D.bias),'split',[D.split,D.distType],'style',sBW);
+        plt.line(D.corrReg,abs(D.bias),'split',[D.splitHalf,D.distType],'style',sBW);
         ylabel('Bias');
         xlabel('within-region noise');
         subplot(133)
-        plt.line(D.corrReg,D.var,'split',[D.split,D.distType],'style',sBW);
+        plt.line(D.corrReg,D.var,'split',[D.splitHalf,D.distType],'style',sBW);
         ylabel('variance');
         xlabel('within-region noise');
         
         figure
         t=getrow(D,ismember(D.corrReg,[0.1,0.9]));
         subplot(131)
-        plt.bar(t.corrReg,t.confus,'split',[ t.split t.distType],'style',sBW);
+        plt.bar(t.corrReg,t.confus,'split',[ t.splitHalf t.distType],'style',sBW);
         drawline(0.5,'dir','horz','linestyle','--');
         ylabel('Confusability');
         subplot(132)
-        plt.bar(t.corrReg,abs(t.bias),'split',[ t.split t.distType],'style',sBW);
+        plt.bar(t.corrReg,abs(t.bias),'split',[ t.splitHalf t.distType],'style',sBW);
         drawline(0.5,'dir','horz','linestyle','--');
         ylabel('Bias');
         subplot(133)
-        plt.bar(t.corrReg,t.var,'split',[ t.split t.distType],'style',sBW);
+        plt.bar(t.corrReg,t.var,'split',[ t.splitHalf t.distType],'style',sBW);
         drawline(0.5,'dir','horz','linestyle','--');
         ylabel('Variance');
         
@@ -418,8 +642,11 @@ switch(what)
         
     case 'run_job'
     %rsa_connect('run_simulation');
-    rsa_connect('run_simulation','type',2);
-
+    rsa_connect_new('run_simulation','numSim',500,'noiseType','between');
+    rsa_connect_new('run_simulation','distCalc','squared','numSim',500,'noiseType','between');
+    rsa_connect_new('run_simulation','numSim',500,'noiseType','both');
+    rsa_connect_new('run_simulation','distCalc','squared','numSim',500,'noiseType','both');
+    
     case 'KL_div'
         % noiseless example
         % different Gs
@@ -469,6 +696,95 @@ switch(what)
             end
         end
         keyboard;
+
+    case 'dist_cov' % test case for distance covariances 
+        nCond = 5;
+        nPart = 8;
+        nVox = 100;
+        numSim = 50;
+        varReg = 1;
+        corrReg = 0;
+        type=3; 
+        vararginoptions(varargin,{'nCond','numSim','RDMtype','corrRDM','type','noiseType','corrReg','varReg'});
+        
+        [G,D] = makeGs(nCond,type);
+        %  prepare model
+        nRDM = size(G,2);
+        for i=1:nRDM
+            trueRDM(i,:)=rsa_vectorizeRDM(D{i});
+            M{i}=makeModel('sameRDM',G{i},nCond);
+        end
+        % other details for data generation
+        S.numPart = nPart;
+        S.numVox  = nVox;
+        % calculate true distances
+        [T.trueDist,T.reg1,T.reg2,T.distType] = calcTrueDist(trueRDM);
+        NN=[];
+        for cor=corrReg
+            for var=varReg
+                for n=1:numSim
+                    for i=1:nRDM
+                        [data{i},partVec,condVec] = makePatterns('G',M{i}.Gc,'signal',1,'nPart',S.numPart,'nVox',S.numVox); %signal 1, noise 0
+                    end
+                    % add shared noise across regions
+                    data = addSharedNoise(data,var,cor);
+                    [V,~,~]=covariance_dist(data{4},partVec,condVec);
+                    V = pcm_makePD(V);
+                    dist = rsa.distanceLDC(data{4},partVec,condVec);
+                    dist_pw = rdm_prewhitenDist(dist,V);
+                    % store info
+                    N.dist      = dist';
+                    N.dist_pw   = dist_pw';
+                    N.distID    = [1:size(dist,2)]';
+                    N.numSim    = ones(size(N.dist))*n;
+                    N.varReg    = ones(size(N.dist))*var;
+                    N.corrReg   = ones(size(N.dist))*cor;
+                    NN=addstruct(NN,N);
+                end; % number of simulations
+            end
+        end
+
+        keyboard;
+        % different variance of within-reg noise
+        T=getrow(NN,NN.corrReg==0);
+        figure
+        scatterplot(T.dist,T.dist_pw,'split',T.varReg);
+        xlabel('distance');
+        ylabel('distance-pw');
+        [i1,j1,k1]=pivottable(T.varReg,T.distID,T.dist,'mean');
+        [i2,j2,k2]=pivottable(T.varReg,T.distID,T.dist_pw,'mean');
+        figure
+        vlen=length(varReg);
+        for v=1:vlen
+            subplot(vlen,2,(v-1)*2+1)
+            imagesc(rsa_squareRDM(i1(v,:)));
+            title(sprintf('distance var %d',varReg(v)));
+            subplot(vlen,2,(v-1)*2+2)
+            imagesc(rsa_squareRDM(i2(v,:)));
+            title(sprintf('distance-pw var %d',varReg(v)));
+            hold on;
+        end
+        % different variance of shared noise
+        T=getrow(NN,NN.varReg==20);
+        figure
+        scatterplot(NN.dist,NN.dist_pw,'split',NN.corrReg);
+        xlabel('distance');
+        ylabel('distance-pw');
+        [i1,j1,k1]=pivottable(NN.corrReg,NN.distID,NN.dist,'mean');
+        [i2,j2,k2]=pivottable(NN.corrReg,NN.distID,NN.dist_pw,'mean');
+        figure
+        vlen=length(varReg);
+        for v=1:vlen
+            subplot(vlen,2,(v-1)*2+1)
+            imagesc(rsa_squareRDM(i1(v,:)));
+            title(sprintf('distance corr %d',corrReg(v)));
+            subplot(vlen,2,(v-1)*2+2)
+            imagesc(rsa_squareRDM(i2(v,:)));
+            title(sprintf('distance-pw corr %d',corrReg(v)));
+            hold on;
+        end
+        
+
     otherwise
         disp('there is no such case.')
 end
@@ -476,102 +792,126 @@ end
 
 %  % Local functions
 
-function [G,D] = makeGs(condN,type)
+function [G,D]  = makeGs(condN,type)
 % makes specific Gs
 switch type
-    case 1 % G1 = G2 ~= G3
-        U1 = normrnd(0,1,[condN,6]);
-        G{1} = U1*U1';
-        G{2} = G{1};
-        U3 = normrnd(0,1,[condN,6]);
-        G{3} = U3*U3';
-    case 2
-        U1 = normrnd(0,1,[condN,6]);
-        G{1} = U1*U1';
-        U3 = normrnd(0,1,[condN,6]);
-        G{3} = U3*U3';
-        G{2} = G{1}*0.8+G{3}*0.2;
-    case 3
-        nCond=5;
-        D{1}=zeros(nCond); D{2}=D{1};
+   case 1 % a1 < a2 < a3 (same, diff, orthogonal)
+        D{1}=zeros(condN); D{2}=D{1};
         D{1}(1:2,1:5)=1;
         D{1}(3:5,1:2)=1;
-        D{1}(1:nCond+1:end)=0; %
+        D{1}(1:condN+1:end)=0; %
         D{4}(3:5,3:5)=1;
-        D{4}(1:nCond+1:end)=0;
-        D{4}(1:nCond+1:end)=0;
+        D{4}(1:condN+1:end)=0;
+        D{4}(1:condN+1:end)=0;
         D{2}=D{1};
         U3 = normrnd(0,1,[5,6]);
         D3 = U3*U3';
         D3(1:5+1:end)=0;
         D{3}=0.2*D3+0.8*(D{1}*0.9+D{4}*0.1);
-        H = eye(nCond) - 1/nCond;
-        for i=1:4
-            G{i} = -0.5*H*D{i}*H';
-            G{i} = G{i}./trace(G{i});
-            G{i}(find(isnan(G{i})))=0; % in case of nans
-        end
-    case 4
-        nCond=5;
-        D{1}=zeros(nCond); D{2}=D{1};
+    case 2 % a1 < a2 < a3 (same, diff, more diff)
+        D{1}=zeros(condN); 
         D{1}(1:2,1:5)=1;
         D{1}(3:5,1:2)=1;
-        D{1}(1:nCond+1:end)=0; %
+        D{1}(1:condN+1:end)=0; %
         tmp(3:5,3:5)=1;
-        tmp(1:nCond+1:end)=0;
-        tmp(1:nCond+1:end)=0;
+        tmp(1:condN+1:end)=0;
+        tmp(1:condN+1:end)=0;
         D{2}=D{1};
         U3 = normrnd(0,1,[5,6]);
         D3 = U3*U3';
         D3(1:5+1:end)=0;
-        D{3}=0.2*D3+0.5*(D{1}*0.9+tmp*0.1);
-        D{4}=0.2*D3+0.9*(D{1}*0.9+tmp*0.1);
-        H = eye(nCond) - 1/nCond;
-        for i=1:4
-            G{i} = -0.5*H*D{i}*H';
-            G{i} = G{i}./trace(G{i});
-            G{i}(find(isnan(G{i})))=0; % in case of nans
-        end
+        D{3}=0.2*D3+0.9*(D{1}*0.9+tmp*0.1);
+        D{4}=0.2*D3+0.5*(D{1}*0.9+tmp*0.1);
+    case 3 % special case rank def D4
+        D{1}=ones(condN)-eye(condN);
+        D{2}=D{1};
+        D{4}=zeros(condN);
+        D{4}(1,1:5)=1;
+        D{4}(2:5,1)=1;
+        D{4}(1:condN+1:end)=0; %
+        D{3}=0.5*D{1}+0.5*D{4};
+end
+H = eye(condN) - 1/condN; 
+H1 = indicatorMatrix('allpairs',[1:condN]);  
+for i=1:4
+    G{i} = -0.5*H*D{i}*H';
+    G{i} = pcm_makePD(G{i});
+    G{i} = G{i}./trace(G{i});
+    G{i}(find(isnan(G{i})))=0; % in case of nans
+    % recalc D
+    D{i}=rsa_squareRDM(diag(H1*G{i}*H1')');
+end
         
 end
-
-end
-function M = makeModel(rdmType,D,nCond)
+function M      = makeModel(rdmType,D,nCond)
 M.type       = 'feature';
 %M.numGparams = 1;
 M.numGparams = 1;
 M.theta      = 1; 
 switch rdmType
     case 'sameRDM'
-        M.Ac=D;
+        M.Gc=D;
     case 'randomRDM'
         M.Ac=rand(nCond);
+        M.Gc = M.Ac*M.Ac';
     case 'combRDM'
-        M.Ac=D;
+        M.Gc=D;
 end
 end
-function data = addSharedNoise(data,var,r)
+function data   = addSharedNoise(data,var,r)
 % input: 
 % data - datasets
 % alpha - variance
 % r - correlation
     nDataset = size(data,2);
     nVox = size(data{1},2);
-    nCond = size(data{1},1);
-    Z = normrnd(0,1,nCond,nDataset*nVox);
-    Pw = zeros(nVox); % voxel covariance matrix
-    Pw(1:nVox+1:end)=ones(nVox,1)*var; % alpha on diag - within reg noise
-    Ps = zeros(nVox);
-    covR = r*var; % covariance between two reg: cov = r x var
-    Ps(1:nVox+1:end)=ones(nVox,1)*covR; % across reg noise
-    % across reg var-cov matrix
-    % pre-allocate
-    P = zeros(nDataset*nVox); Zn = P;
-    P = [Pw Ps Ps Ps; Ps Pw Ps Ps; Ps Ps Pw Ps; Ps Ps Ps Pw]; % fixed for 3 RDMs
+    nTrials = size(data{1},1);
+    Z = normrnd(0,1,nTrials,nDataset*nVox);
+    A = eye(nDataset)*var+(ones(nDataset)-eye(nDataset))*var*r;
+    P = kron(A,eye(nVox)); 
     Zn = Z*sqrtm(P);     % shared noise matrix across reg
     for i=1:nDataset
         data{i} = data{i} + Zn(:,(i-1)*nVox+1:i*nVox);
     end
+end
+
+function [trueDist,ind1,ind2,distType] = calcTrueDist(trueRDM)
+
+[trueDist1,~,~] = calcDist(trueRDM,'correlation');  % 1 - squared + correlation
+[trueDist2,~,~] = calcDist(trueRDM,'cosine');       % 2 - squared + cosine
+tmpRDM = ssqrt(trueRDM);
+[trueDist3,~,~] = calcDist(tmpRDM,'cosine');        % 3 - ssqrt + cosine
+V = repmat({eye(size(trueRDM,2))},1,size(trueRDM,1));
+% 'prewhiten' distances
+%tmpRDM = rdm_prewhitenDist(trueRDM,V);
+[trueDist4,reg1,reg2] = calcDist(trueRDM,'cosine');  % 4 - prewhiten + cosine (same as squared here)
+% concatenate all results
+trueDist = [trueDist1; trueDist2; trueDist3; trueDist4];
+ind1 = repmat(reg1,4,1);
+ind2 = repmat(reg2,4,1);
+distType = kron([1:4]',ones(3,1));
+end
+function [dist,ind1,ind2,distType] = calcDistAll(data,partVec,condVec,distType,V)
+
+switch distType
+    case 1 % correlation non-cv
+        rdm = makeRDM(data,partVec,condVec,'correlation'); % previously sqEuc
+        [dist,ind1,ind2] = calcDist(rdm,'correlation');
+    case 2 % cosine single cv crossnobis (squared)
+        rdm = makeRDM(data,partVec,condVec,'crossnobis');
+        [dist,ind1,ind2] = calcDist(rdm,'cosine');
+    case 3 % cosine single cv crossnobis (ssqrt)
+        rdm = makeRDM(data,partVec,condVec,'crossnobis');
+        rdm = ssqrt(rdm);
+        [dist,ind1,ind2] = calcDist(rdm,'cosine');
+    case 4 % cosine single cv crossnobis (covariance prewhitened)
+        rdm = makeRDM(data,partVec,condVec,'crossnobis');
+        rdm = rdm_prewhitenDist(rdm,V);
+        [dist,ind1,ind2] = calcDist(rdm,'cosine');
+    case 5 % anzellotti
+        [dist,ind1,ind2] = anzellottiDist(data,partVec,condVec);
+end
+distType = repmat(distType,3,1);
 end
 
 function rdm   = makeRDM(data,partVec,condVec,type)
@@ -581,35 +921,29 @@ nData=size(data,2);
 X = indicatorMatrix('identity_p',condVec);
 H=indicatorMatrix('allpairs',unique(condVec)');
 for st=1:nData
+    nVox = size(data{st},2); 
     switch type
-        case 1 % euclidean
+        case 'sqEuc' % squared euclidean
             % estimate mean condition pattern per dataset
             D{st}=pinv(X)*data{st};
             % remove mean pattern
             for i=1:length(unique(partVec))
                 d(:,:,i)=data{st}(partVec==i,:)*data{st}(partVec==i,:)';
             end
-         %   for i=1:length(unique(partVec))
-         %       data_2{st}(partVec==i,:)=bsxfun(@minus,data{st}(partVec==i,:),mean(data{st}(partVec==i,:)));
-         %   end
-           % D_2{st}=pinv(X)*data_2{st};
-            % make RDM from non-crossval G
             G=D{st}*D{st}';
-          %  G_2=D_2{st}*D_2{st}';
-           rdm(st,:)= diag(H*G*H');
-          %  rdm_2(st,:)= diag(H*G_2*H');
-          % rdm(st,:) = pdist(D{st},'euclidean');
-        case 2 % crossvalidated
+           rdm(st,:)= diag(H*G*H')/nVox;
+        case 'crossnobis' % Squared crossvalidated Euclidean (crossnobis)
             % calculate crossvalidated squared Euclidean distances
             rdm(st,:)=rsa.distanceLDC(data{st},partVec,condVec);
-        case 3 % correlation
+        case 'correlation' % correlation
             % estimate mean condition pattern per dataset
             D{st}=pinv(X)*data{st};
             D{st}=bsxfun(@minus,D{st},mean(D{st},1));
-            G=D{st}*D{st}';
+            %G=D{st}*D{st}';
             % calculate correlation distance (mean subtracted)
-            rdm(st,:)=corr_crossval(G,'reg','minvalue');
-        case 4 % cosine
+            %rdm(st,:)=corr_crossval(G,'reg','minvalue');
+            rdm(st,:)=rsa_vectorizeRDM(1-corr(D{st}'));
+        case 'cosine' % cosine
             % estimate mean condition pattern per dataset
             D{st}=pinv(X)*data{st};
             G=D{st}*D{st}';
@@ -629,27 +963,29 @@ H=indicatorMatrix('allpairs',unique(condVec)');
 idx(:,1) = mod(partVec,2)==1;
 idx(:,2) = mod(partVec,2)==0;
 count=1;
+
 for st=1:nData
+    nVox = size(data{st},2); 
     for p=1:2 % partition
         switch type
-            case 1 % euclidean
+            case 'sqEuc' % squared euclidean
                 % estimate mean condition pattern per dataset
                 D=pinv(X(idx(:,p),:))*data{st}(idx(:,p),:);               
                 % make RDM from non-crossval G
                 G=D*D';
-               % rdm(count,:)= diag(H*G*H');
-               rdm(count,:) = pdist(D,'euclidean');
-            case 2 % crossvalidated
+                rdm(count,:)= diag(H*G*H')/nVox;
+               %rdm(count,:) = pdist(D,'euclidean');
+            case 'crossnobis' % crossvalidated squared euclidean (crossnobis)
                 % calculate crossvalidated squared Euclidean distances
                 rdm(count,:)=rsa.distanceLDC(data{st}(idx(:,p),:),partVec(idx(:,p)),condVec(idx(:,p)));
-            case 3 % correlation
+            case 'correlation'
                 % estimate mean condition pattern per dataset
                 D=pinv(X(idx(:,p),:))*data{st}(idx(:,p),:);
                 D=bsxfun(@minus,D,mean(D,1));
                 G=D*D';
                 % calculate correlation distance (mean subtracted)
                 rdm(count,:)=corr_crossval(G,'reg','minvalue');
-            case 4 % cosine
+            case 'cosine'
                 D=pinv(X(idx(:,p),:))*data{st}(idx(:,p),:);
                 G=D*D';
                 % calculate cosine distance (mean not subtracted)
@@ -659,7 +995,7 @@ for st=1:nData
     end;  % partition
 end; % data
 end
-function [dist,ind1,ind2,distType] = calcDist(rdm)
+function [dist,ind1,ind2] = calcDist(rdm,distType)
 % calculate distance metric from the input
 % N datasets, D distances
 % input: N x D matrix
@@ -670,21 +1006,20 @@ function [dist,ind1,ind2,distType] = calcDist(rdm)
 % output: dist - distances
 % ind1: indicator which rdm taken as first
 % ind2: indicator which rdm taken as second
-numRDM = size(rdm,1);
-dist=[];
-%tmp=pdist(rdm,'correlation');
-%dist = [dist;tmp(1:3)'];
-tmp=corr(rdm');
-dist = [dist;(1-tmp(1,[2:4]))'];
-%dist = [dist;(1-[tmp(1,[2,3]) tmp(3,4)])'];
-tmp=pdist(rdm,'cosine');
-dist = [dist;tmp(1:3)'];
-%dist = [dist;[tmp(1) tmp(2) tmp(6)]'];
-ind1 = ones(size(dist,1),1);
-ind2=repmat([2:4]',2,1);
-distType=kron((1:2)',ones(3,1));
+switch (distType)
+    case 'correlation'
+        % additional step for correlation - first remove the mean
+        rdm  = bsxfun(@minus,rdm,mean(rdm,2));
 end
-function [dist,ind1,ind2,distType] = calcDist_splithalf(rdm)
+rdm  = normalizeX(rdm);
+tmp  = rdm*rdm';
+distAll = 1-rsa_vectorizeRDM(tmp);
+dist = distAll(1:3)';
+ind1 = ones(size(dist,1),1);
+ind2 = (2:4)';
+end
+
+function [dist,ind1,ind2] = calcDist_splithalf(rdm,distType)
 % calculate distance metric from the input
 % crossvalidated version - within and between dataset
 % N datasets, D distances
@@ -693,33 +1028,25 @@ function [dist,ind1,ind2,distType] = calcDist_splithalf(rdm)
 % 1) correlation
 % 2) cosine
 % 3) euclidean
-distLab={'correlation','cosine'};
-numRDM=4;
 count=1;
 ind=ones(3,1);
-
-for i=1:length(distLab)
-    tmp  = rsa_squareRDM(pdist(rdm,distLab{i}));
-    for c=1:size(ind,1) % for every pair
-        if c==1
-            dist(count,:) = mean([tmp(1,4) tmp(2,3)]);
-        elseif c==2
-            dist(count,:) = mean([tmp(1,6) tmp(2,5)]);
-        else
-            dist(count,:) = mean([tmp(1,8) tmp(2,7)]);
-            %dist(count,:) = mean([tmp(5,8) tmp(6,7)]);
-        end
-        distType(count)=i;
-        count=count+1;    
+tmp  = rsa_squareRDM(pdist(rdm,distType));
+for c=1:size(ind,1) % for every pair
+    if c==1
+        dist(count,:) = mean([tmp(1,4) tmp(2,3)]);
+    elseif c==2
+        dist(count,:) = mean([tmp(1,6) tmp(2,5)]);
+    else
+        dist(count,:) = mean([tmp(1,8) tmp(2,7)]);
+        %dist(count,:) = mean([tmp(5,8) tmp(6,7)]);
     end
+    count=count+1;
 end
-ind1 = repmat(ind,2,1);
-ind2=repmat([2:4]',2,1);
-distType = kron((1:2)',ones(3,1));
-
+ind1 = ones(3,1);
+ind2 = [2:4]';
 end
 
-function [dist,ind1,ind2,distType] = anzellottiDist(data,partVec,condVec)
+function [dist,ind1,ind2] = anzellottiDist(data,partVec,condVec)
 % function [dist,ind1,ind2,distType] = anzellottiDist(data,partVec,condVec)
 % calculates a relationship between data of different regions
 % for now the distance output is 1-R2 and 1-r
@@ -730,14 +1057,4 @@ for i=1:size(ind1,1)
     dist(i) = multiDependVox(data{1},data{i+1},partVec,condVec,'type','reduceAB');
     ind2(i,:)=i+1;
 end
-distType=ind1*3;
 end
-
-function regCorr  = regCorrData(data)
-ind = indicatorMatrix('allpairs',[1:size(data,2)]);
-for i=1:size(ind,1)
-    indD = find(ind(i,:));
-    regCorr(i,:)=corr(data{indD(1)}(:),data{indD(2)}(:));
-end
-end
-

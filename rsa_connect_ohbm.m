@@ -1,4 +1,4 @@
-function varargout = rsa_connect_new(what,varargin)
+function varargout = rsa_connect_ohbm(what,varargin)
 
 baseDir = '/Volumes/MotorControl/data/rsa_connectivity';
 codeDir = '/Users/Eva/Documents/MATLAB/projects/rsa_connectivity';
