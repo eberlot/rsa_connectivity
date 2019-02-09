@@ -1,4 +1,4 @@
-function [R2,r] = multiDependCond(regA,regB,partVec,condVec,varargin);
+function [R2,r] = multiDependCond(regA,regB,partVec,condVec,varargin)
 %function [R2,r] = multiDependCond(regA,regB,partVec,condVec,varargin);
 % calculates the multivariate dependency of patterns in regA and regB
 % 1) splits regA and regB patterns across runs into train and test sets

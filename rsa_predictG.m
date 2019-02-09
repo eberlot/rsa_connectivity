@@ -2,7 +2,7 @@ function varargout = rsa_predictG(what,varargin)
 
 switch what
     case 'transformG'
-        U1=normrnd(0,1,[5,6]);
+        U1=normrnd(0,1,5,6);
         U2 = U1;
         G1 = U1*U1';
         G2 = U2*U2';
@@ -15,14 +15,16 @@ switch what
         U1=bsxfun(@times,U1,sqrt(l1'));
         U2=bsxfun(@times,U2,sqrt(l2'));
         
-        A12 = pinv(U1)*U2;
-        A21 = pinv(U2)*U1;
+        %A12 = pinv(U1)*U2;
+        %A21 = pinv(U2)*U1;
         
         T12 = pinv(U1)*G2*pinv(U1)';
         T21 = pinv(U2)*G1*pinv(U2)';
+        varargout{1}=T12;
+        varargout{2}=T21;
     case 'mixG'
         % mix G3 as G1 and G2 with different proportions
-        w1 = [0.1:0.1:0.9];
+        w1 = 0.1:0.1:0.9;
         
         U1=normrnd(0,1,[5,6]);
         U2=normrnd(0,1,[5,15]);
@@ -154,8 +156,8 @@ switch what
         U1=bsxfun(@times,U1,sqrt(l1'));
         U2=bsxfun(@times,U2,sqrt(l2'));
         
-        A12 = pinv(U1)*U2;
-        A21 = pinv(U2)*U1;
+        %A12 = pinv(U1)*U2;
+        %A21 = pinv(U2)*U1;
         
         T12 = pinv(U1)*G2*pinv(U1)';
         T21 = pinv(U2)*G1*pinv(U2)';
@@ -173,6 +175,9 @@ switch what
                 scaling = 'non-isotropic';
             end
         end
+        varargout{1}=scaling;
+        varargout{2}=predG2;
+        varargout{3}=predG1;
     case 'distanceMetric'
         % determine a distance metric from predG to realG
         
@@ -216,7 +221,7 @@ switch what
             imagesc(FT);
             title('FT - w2./w1');
             subplot(338)
-            scatterplot(diag(w1),diag(w2),'label',[1:5]);
+            scatterplot(diag(w1),diag(w2),'label',(1:5));
             min_axis = min([range(xlim) range(ylim)]);
             hold on;
             plot(0:min_axis,0:min_axis,'k-');
@@ -266,7 +271,7 @@ switch what
             imagesc(FT);
             title('FT - w2./w1');
             subplot(3,4,10)
-            scatterplot(diag(w1),diag(w2),'label',[1:5]);
+            scatterplot(diag(w1),diag(w2),'label',(1:5));
             min_axis = min([range(xlim) range(ylim)]);
             hold on;
             plot(0:min_axis,0:min_axis,'k-');
@@ -285,7 +290,7 @@ switch what
         U3=normrnd(0,1,[5,10]);
         G3 = U3*U3';
         [U3,l3]=eig(G3);
-        [l3,i3]=sort(diag(l3),1,'descend');
+        [l3,~]=sort(diag(l3),1,'descend');
         U3=U3(:,i1);
         U3=bsxfun(@times,U3,sqrt(l3')); 
         % exaggerate the first feature in G4 3x in U
@@ -321,7 +326,7 @@ switch what
         imagesc(FT);
         title('FT - w2./w1');
         subplot(3,4,10)
-        scatterplot(diag(w3),diag(w4),'label',[1:5]);
+        scatterplot(diag(w3),diag(w4),'label',(1:5));
         min_axis = min([range(xlim) range(ylim)]);
         hold on;
         plot(0:min_axis,0:min_axis,'k-');

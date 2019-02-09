@@ -1,32 +1,36 @@
-function [Y, partVec,condVec] = makePatterns(varargin)
-% SArbuckle 10/2018
-% EBerlot changes (Nov2018):
-% - signal and noise separately
-% - partVec and condVec outputs
+function [Y, partVec,condVec] = makePatterns(G,varargin)
+% function [Y, partVec,condVec] = makePatterns(varargin)
+% makes patterns of beta values
+% INPUT:
+%           - G:        true second moment matrix (K x K)
+% VARARGIN:
+%           - nPart:    number of partitions (M; default 8)
+%           - nVox:     number of voxels (P; default 100)
+%           - signal:   true signal (scalar value; default 1)
+%
+% OUTPUT:
+%           - Y: voxel  beta patterns (dimensions: (KxM) x P)
+%           - partVec:  partition vector 
+%           - condVec:  condition vector
+%           
+% EBerlot (Nov2018):
 % % housekeeping
-G     = []; % condition covariance matrix
-Sw    = []; % spatial covariance matrix
-nPart = []; % number of partitions
-nVox  = []; % number of voxels
-signal= []; % signal
-vararginoptions(varargin,{'G','Sw','nPart','nVox','signal'});
+nPart  = 8; % number of partitions
+nVox   = 1000; % number of voxels
+signal = 1; % signal
+vararginoptions(varargin,{'nPart','nVox','signal'});
 nCond = size(G,1);
-
-% % simulate patterns with condition covariance G and spatial
-% covariance SW at desired snr ratio.
+if isempty(G)
+    error('Need to provide a second moment matrix (G) as input.');
+end
+% % simulate patterns with condition covariance G
 % - make design matrix
 X = kron(ones(nPart,1),eye(nCond));
 % - simulate white data with zero mean
 U = mvnrnd_exact(G,nVox);
-if ~isempty(Sw)
-    U = U * Sw^0.5; % Does not work right now
-end
-% - apply design to true patterns
+% - apply design to true patterns + add signal scaling
 Y = X*U*signal;
-% add signal scaling
-% - generate IID noise
-% - scale noise by signal-to-noise signal-to-noise variance ratio
-% - add noise to patterns
-partVec = kron([1:nPart]',ones(nCond,1));            % Partitions
-condVec = kron(ones(nPart,1),[1:nCond]');
+% create partition / condition vectors
+partVec = kron((1:nPart)',ones(nCond,1));          
+condVec = kron(ones(nPart,1),(1:nCond)');
 end

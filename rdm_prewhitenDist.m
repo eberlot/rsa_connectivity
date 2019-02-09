@@ -1,4 +1,4 @@
-function dist_pw = rdm_prewhitenDist(dist,V)
+function dist_pw = rdm_prewhitenDist(dist,V,varargin)
 %function dist_pw = rdm_prewhitenDist(dist,V)
 % prewhitens the distances using the covariance matrix of the vector
 % distances (V)
@@ -8,11 +8,15 @@ function dist_pw = rdm_prewhitenDist(dist,V)
 %
 % OUTPUT: - dist_pw: vector containing prewhitened distances (1 x d)
 %
+% VARARGIN: - type: 'multi' or 'uni' - multivariate or univariate prewhitening
+%                   default multi
 % Note: allows multiple distance matrices (e.g. k) prewhitened at the same time
 %       - dist (k x d)
 %       - V    k cells of size d x d
 %       - output k x d
 %
+type = 'multi';
+vararginoptions(varargin,{'type'});
 % check the type and dimension of inputs 
 if iscell(V)
     nRDM = size(V,2);
@@ -28,8 +32,10 @@ end
 dist_pw=zeros(nRDM,size(V{1},2));
 % do the calculation
 for i=1:nRDM
-    % formula dist_pw = V^(-.5)*dist
-    tmp = bsxfun(@rdivide,dist(i,:),sqrt(V{i}));
-    dist_pw(i,:) = diag(tmp)'; % !!!!!! NOTE: for now using only the diagonal, could change....
-end
+    switch type
+        case 'multi'
+            dist_pw(i,:) = dist(i,:)*V{i}^(-1/2);
+        case 'uni'
+            dist_pw(i,:) = dist(i,:).*(diag(V{i}).^(-1/2))';
+    end
 end

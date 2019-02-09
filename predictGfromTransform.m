@@ -1,6 +1,6 @@
 function [predG,varargout]=predictGfromTransform(G1,T,varargin)
 % function [predG,r,cosDist]=predictGfromTransform(G1,T,varargin)
-% predicts G2 from G1 using T matrix
+% predicts G2 from G1 using the transformation T matrix
 % INPUT:
 % - G1: crossvalidated G matrix from reg1
 % - T:  transformation matrix (obtained using calcTransformG, or feature matrix)
@@ -26,7 +26,7 @@ U1          = bsxfun(@times,V1,ssqrt(l'));
 
 predG = U1*T*U1';
 
-if exist('G2')
+if exists('G2')
     % assess the fit
     Gtrue   = rsa_vectorizeIPMfull(G2);
     Gpred   = rsa_vectorizeIPMfull(predG);

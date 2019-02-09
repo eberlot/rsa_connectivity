@@ -11,26 +11,26 @@ end
 
 % centering matrix H
 H = eye(numCond) - ones(numCond)/numCond;
+rsa_distcorr = zeros(1,size(H,1));
 for st = 1:numRDMs
     % reconstruct the square matrix
-    R{st}=rsa_squareRDM(rdms(st,:));
+    R=rsa_squareRDM(rdms(st,:));
     % calculate doubly centered distance matrix
-    R_cent{st} = H*R{st}*H';
+    R_cent = H*R*H';
     % make a modified version of centered rdm
-    R_mod{st}  = zeros(size(R_cent{st}));
     % 1) modify off-diagonal elements
-    offDiag_new{st} = (numCond/(numCond-1))*(R_cent{st}-(R{st}/(numCond)));
-    R_mod{st}     = offDiag_new{st};
+    offDiag_new{st} = (numCond/(numCond-1))*(R_cent-(R/(numCond)));
+    R_mod     = offDiag_new{st};
     % 2) modify diagonal elements
     meanRow     = mean(R{st},1);
     meanAll     = mean(mean(R{st}));
     diagNew{st} = (numCond/(numCond-1))*(meanRow-meanAll);
-    % assign to new rdm
-    R_mod{st}(eye(size(R_mod{st}))==1) = diagNew{st};
+    % assign to new rdm - not necessary because not returning the new RDM
+    %R_mod(eye(size(R_mod))==1) = diagNew{st};
 end
 
 % determine all possible pairs of rdms
-indPair = indicatorMatrix('allpairs',[1:numRDMs]);
+indPair = indicatorMatrix('allpairs',1:numRDMs);
 % make calculation for each pair
 for p = 1:size(indPair,1)
     ind=find(indPair(p,:));

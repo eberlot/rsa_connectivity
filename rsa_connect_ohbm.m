@@ -1,11 +1,9 @@
 function varargout = rsa_connect_ohbm(what,varargin)
 
 baseDir = '/Volumes/MotorControl/data/rsa_connectivity';
-codeDir = '/Users/Eva/Documents/MATLAB/projects/rsa_connectivity';
+%codeDir = '/Users/Eva/Documents/MATLAB/projects/rsa_connectivity';
 % example RDM distance matrix
 %load(fullfile(baseDir,'RDM.mat'));
-
-distLabels={'corr','cosine','euclidean','anzellotti'};
 
 % for plotting
 gray=[80 80 80]/255;
@@ -14,12 +12,10 @@ lightlightgray=[200 200 200]/255;
 silver=[240 240 240]/255;
 black=[0 0 0]/255;
 blue=[49,130,189]/255;
-lightblue=[158,202,225]/255;
 red=[222,45,38]/255;
 lightred=[252,146,114]/255;
-sAll = style.custom({black,gray,lightlightgray,red,lightred,blue});
 
-c1=[39 38 124]/255;
+%c1=[39 38 124]/255;
 c2=[140 140 185]/255;
 c3=[249 191 193]/255;
 c1=[0 0 200]/255;
@@ -35,7 +31,7 @@ switch(what)
         numSim = 50;
         %varReg = [0,1,10,60];
         varReg = [0,1,5,10:5:30];
-        corrReg = [0:0.1:0.9];
+        corrReg = 0:0.1:0.9;
         %corrReg = [0,0.1,0.5,0.9];
         type=3; % type 1: G1=G2 ~= G3; type 2: G1~=G2~=G3 (but dist(G2-G1)<dist(G3-G1))
         noiseType='within';
@@ -49,16 +45,18 @@ switch(what)
                 corrReg = 0;
             case 'between'
                 varReg = 80;
-                corrReg = [0:0.1:0.9];
+                corrReg = 0:0.1:0.9;
             case 'both'
                  varReg  = [0:0.5:5,6:1:10,12:2:20];
-                 corrReg = [0:0.1:0.9];
+                 corrReg = 0:0.1:0.9;
         end
         T.trueDist=zeros(6,1);
       %  while T.trueDist(2)<0.4
             [G,D] = makeGs(nCond,type);
             %  prepare model
             nRDM = size(G,2);
+            trueRDM = zeros(nRDM,nCond*(nCond-1)/2);
+            M = cell(1,nRDM);
             for i=1:nRDM
                 trueRDM(i,:)=rsa_vectorizeRDM(D{i});
                 M{i}=makeModel('sameRDM',G{i},nCond);
@@ -70,7 +68,7 @@ switch(what)
                 trueRDM=ssqrt(trueRDM);
             end
             [trueDist1,reg1,reg2] = calcDist(trueRDM,'correlation'); % true reg distance - save T
-            [trueDist2,reg1,reg2] = calcDist(trueRDM,'cosine');
+            [trueDist2,~,~] = calcDist(trueRDM,'cosine');
             T.trueDist=[trueDist1;trueDist2];
      %   end
         T.reg1=repmat(reg1,2,1);
@@ -78,6 +76,7 @@ switch(what)
         for r=corrReg
             for v=varReg
                 for n=1:numSim
+                    data=cell(1,nRDM);
                     for i=1:nRDM
                         [data{i},partVec,condVec] = makePatterns('G',M{i}.Gc,'signal',1,'nPart',S.numPart,'nVox',S.numVox); %signal 1, noise 0
                     end
@@ -192,7 +191,7 @@ switch(what)
         figure
         for c=1:length(distCalc)
             D=load(fullfile(baseDir,sprintf('simulation_dist_noise_%s_dist_%s', noiseType,distCalc{c})));
-            D=getrow(D,ismember(D.varReg,[0:1:20]));
+            D=getrow(D,ismember(D.varReg,0:1:20));
             CC=[];
             for i=unique(D.(metric))'
                 for j=1:max(D.distType)

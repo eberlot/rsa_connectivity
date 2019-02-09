@@ -28,12 +28,12 @@ else
     C = pinv(D1)*D2; 
     % singular value decomposition
     [V,S,W] = svd(C) ;   % singular value decomposition
-	I = eye(N) ;
-	if (det(V*W') < 0)   % more numerically stable than using (det(C) < 0)
-		I(N,N) = -1 ;
+    I = eye(N) ;
+    if (det(V*W') < 0)   % more numerically stable than using (det(C) < 0)
+        I(N,N) = -1 ;
     end
     % rotation
-	R = W*I*V' ;
+    R = W*I*V' ;
     % translation
 	T = C2-R*C1 ;
 

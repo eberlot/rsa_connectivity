@@ -17,21 +17,22 @@ function rsa_corr = rsa_calcCorrRDMs(rdmSets,varargin)
 
 interceptFix = 0;
 vararginoptions(varargin,{'interceptFix'});
-
 numRDMs=size(rdmSets,2);
 % string RDMs into vectors
+vec = cell(1,numRDMs);
 for st = 1:numRDMs
     mask = triu(true(size(rdmSets{st})),1);
     vec{st} = rdmSets{st}(mask);
 end
 
 % determine all possible pairs of rdms
-indPair = indicatorMatrix('allpairs',[1:numRDMs]);
+indPair = indicatorMatrix('allpairs',1:numRDMs);
+rsa_corr=zeros(1,size(indPair,1));
 % make calculation for each pair
 for p = 1:size(indPair,1)
     indRDM=find(indPair(p,:));
     % if no data - make nan
-    if isempty(vec{indRDM(1)}) | isempty(vec{indRDM(2)})
+    if isempty(vec{indRDM(1)}) || isempty(vec{indRDM(2)})
         rsa_corr(p)=NaN;
     else
     switch interceptFix
