@@ -1,10 +1,7 @@
 function varargout = rsa_connect(what,varargin)
 
-%baseDir = '/Volumes/MotorControl/data/rsa_connectivity';
-baseDir = cd;
-%codeDir = '/Users/Eva/Documents/MATLAB/projects/rsa_connectivity';
-% example RDM distance matrix
-%load(fullfile(baseDir,'RDM.mat'));
+baseDir = '/Volumes/MotorControl/data/rsa_connectivity';
+%baseDir = cd;
 
 legLabel = {'RDM-corr','cRDM-cos','cRDM-cos-sqrt','cRDM-cos-uniprewh','cRDM-cos-multiprewh','multiDepend'};
 % for plotting
@@ -83,11 +80,7 @@ switch(what)
                         V{i} = zeros(size(trueRDM,2));
                     end
                     % add shared noise across regions
-                    data = addSharedNoise(data,v,r,nCond);
-                    % calculate correlation across datasets
-                  %  dataCorr(1,:) = corr(data{1}(:),data{2}(:));
-                  %  dataCorr(2,:) = corr(data{1}(:),data{3}(:));
-                  %  dataCorr(3,:) = corr(data{1}(:),data{4}(:));
+                    data = addSharedNoise(data,v,r);
                     for distType=1:6
                         if distType==4
                             for i=1:nRDM
@@ -121,12 +114,12 @@ switch(what)
         save(fullfile(cd,sprintf('truth_noise_%s_type%d',noiseType,type)),'T','trueRDM');
     case 'plot_within'
         noiseType='within';
-        distCalc='squared';
-        vararginoptions(varargin,{'distCalc'});
+        type=11;
+        vararginoptions(varargin,{'type'});
         % choose style
         
-        D=load(fullfile(baseDir,sprintf('simulation_dist_noise_%s_dist_%s', noiseType,distCalc)));
-        load(fullfile(baseDir,sprintf('simulation_truth_noise_%s_dist_%s',noiseType,distCalc)));
+        D=load(fullfile(baseDir,sprintf('dist_noise_%s_type%d', noiseType,type)));
+        load(fullfile(baseDir,sprintf('truth_noise_%s_type%d',noiseType,type)));
         
         legend = {'RDM-corr-reg2','cRDM-corr-reg2','cRDM-split-corr-reg2',...
             'RDM-corr-reg3','cRDM-corr-reg3','cRDM-split-corr-reg3',...
@@ -589,13 +582,7 @@ switch(what)
                             % calculate variance
                             E.var=std(ind2)/range(i);
                             % determine how often correct structure
-                          %  E.confus=sum(ind1<ind2 & ind2 < ind3)/length(ind1);
-                          % E.confus=sum(ind2 < ind3)/length(ind1);
-                          if type==3
-                              E.confus = 1-sum(Dd.calcDist(Dd.reg2==2) < Dd.calcDist(Dd.reg2==3) < Dd.calcDist(Dd.reg2==4))/length(Dd.calcDist(Dd.reg2==2));
-                          elseif type==4
-                              E.confus = 1-sum(Dd.calcDist(Dd.reg2==2) < Dd.calcDist(Dd.reg2==4) & Dd.calcDist(Dd.reg2==4) < Dd.calcDist(Dd.reg2==3))/length(Dd.calcDist(Dd.reg2==2));
-                          end
+                            E.confus=sum(ind1<ind2 & ind2 < ind3)/length(ind1);
                             % other info          
                             E.varReg    = c2;
                             E.corrReg   = c1;
@@ -841,15 +828,6 @@ switch(what)
 %         drawline(0.5,'dir','horz','linestyle','--');
 %         ylabel('Variance');
         
-    case 'run_job'
-        %rsa_connect('run_simulation');
-        typeNum = [11,12,13,21,22,23,3];
-        for t=typeNum
-           % rsa_connect('run_simulation','noiseType','within','type',t,'noiseType','between');
-            rsa_connect('run_simulation','type',t,'noiseType','between');
-            fprintf('Done type %d\n',t);
-        end
-    
     case 'KL_div'
         % noiseless example
         % different Gs
@@ -905,20 +883,20 @@ switch(what)
             end
         end
         varargout{1}=distCorr;
-    case 'dist_cov' % test case for distance covariances 
+    case 'dist_cov' % test case for distance covariances
         nCond = 5;
         nPart = 8;
         nVox = 100;
         numSim = 50;
         varReg = 1;
         corrReg = 0;
-        type=3; 
+        type=3;
         vararginoptions(varargin,{'nCond','numSim','RDMtype','corrRDM','type','noiseType','corrReg','varReg'});
         
         [G,D] = makeGs(nCond,type);
         %  prepare model
         nRDM = size(G,2);
-        trueRDM = size(nRDM,nCond*(nCond-1)/2);
+        trueRDM = zeros(nRDM,nCond*(nCond-1)/2);
         M = cell(1,nRDM);
         for i=1:nRDM
             trueRDM(i,:)=rsa_vectorizeRDM(D{i});
@@ -946,7 +924,7 @@ switch(what)
                     % store info
                     N.dist      = dist';
                     N.dist_pw   = dist_pw';
-                    N.distID    = [1:size(dist,2)]';
+                    N.distID    = (1:size(dist,2))';
                     N.numSim    = ones(size(N.dist))*n;
                     N.varReg    = ones(size(N.dist))*var;
                     N.corrReg   = ones(size(N.dist))*cor;
@@ -954,16 +932,15 @@ switch(what)
                 end; % number of simulations
             end
         end
-
-        keyboard;
+        
         % different variance of within-reg noise
         T=getrow(NN,NN.corrReg==0);
         figure
         scatterplot(T.dist,T.dist_pw,'split',T.varReg);
         xlabel('distance');
         ylabel('distance-pw');
-        [i1,j1,k1]=pivottable(T.varReg,T.distID,T.dist,'mean');
-        [i2,j2,k2]=pivottable(T.varReg,T.distID,T.dist_pw,'mean');
+        i1=pivottable(T.varReg,T.distID,T.dist,'mean');
+        i2=pivottable(T.varReg,T.distID,T.dist_pw,'mean');
         figure
         vlen=length(varReg);
         for v=1:vlen
@@ -981,8 +958,8 @@ switch(what)
         scatterplot(NN.dist,NN.dist_pw,'split',NN.corrReg);
         xlabel('distance');
         ylabel('distance-pw');
-        [i1,j1,k1]=pivottable(NN.corrReg,NN.distID,NN.dist,'mean');
-        [i2,j2,k2]=pivottable(NN.corrReg,NN.distID,NN.dist_pw,'mean');
+        i1=pivottable(NN.corrReg,NN.distID,NN.dist,'mean');
+        i2=pivottable(NN.corrReg,NN.distID,NN.dist_pw,'mean');
         figure
         vlen=length(varReg);
         for v=1:vlen
@@ -996,9 +973,9 @@ switch(what)
         end
     case 'dist_cov_level1'
         nCond = 4;
-        distFactor = [0.5:0.01:1.5]; % constant to multiply the distance with
+        distFactor = 0.5:0.01:1.5; % constant to multiply the distance with
         %noiseL = [0.01,0.1,1,5,20];
-        noiseL = [0.1];
+        noiseL = 0.1;
         nVox=100;
         nPart = 8;
         numSim=1000;
@@ -1050,10 +1027,19 @@ switch(what)
             hold on;
             plot(TT.dist(:,1),TT.V_th(:,5),'ro-');
             hold on;
-           % plot(TT.dist(:,1),TT.V_th(:,2),'ro-');
+            % plot(TT.dist(:,1),TT.V_th(:,2),'ro-');
             plot(TT.dist(:,1),TT.V_th(:,end),'go-');
         end
-
+        
+    case 'run_job'
+        %rsa_connect('run_simulation');
+        typeNum = [11,12,13,21,22,23,3];
+        for t=typeNum
+            % rsa_connect('run_simulation','noiseType','within','type',t,'noiseType','between');
+            rsa_connect('run_simulation','type',t,'noiseType','between');
+            fprintf('Done type %d\n',t);
+        end
+        
     otherwise
         disp('there is no such case.')
 end
@@ -1151,7 +1137,7 @@ for i=1:4
     G{i} = -0.5*H*D{i}*H';
     G{i} = pcm_makePD(G{i});
     G{i} = G{i}./trace(G{i});
-    G{i}(find(isnan(G{i})))=0; % in case of nans
+    G{i}(isnan(G{i}))=0; % in case of nans
     % recalc D
     D{i}=rsa_squareRDM(diag(H1*G{i}*H1')');
 end
@@ -1263,7 +1249,7 @@ function rdm   = makeRDM(data,partVec,condVec,type)
 % makes RDM matrix with given type
 nData=size(data,2);
 X = indicatorMatrix('identity_p',condVec);
-condN = lenght(unique(condVec));
+condN = length(unique(condVec));
 H=indicatorMatrix('allpairs',unique(condVec)');
 for st=1:nData
     nVox = size(data{st},2); 
@@ -1273,10 +1259,6 @@ for st=1:nData
         case 'sqEuc' % squared euclidean
             % estimate mean condition pattern per dataset
             D{st}=pinv(X)*data{st};
-            % remove mean pattern
-            for i=1:length(unique(partVec))
-                d(:,:,i)=data{st}(partVec==i,:)*data{st}(partVec==i,:)';
-            end
             G=D{st}*D{st}';
             rdm(st,:)= diag(H*G*H')/nVox;
         case 'crossnobis' % Squared crossvalidated Euclidean (crossnobis)
