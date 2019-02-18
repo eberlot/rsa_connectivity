@@ -1,6 +1,6 @@
 function varargout = rsa_connect(what,varargin)
 
-baseDir = '/Volumes/MotorControl/data/rsa_connectivity';
+baseDir = '/Users/Eva/Documents/Data/rsa_connectivity';
 %baseDir = cd;
 
 legLabel = {'RDM-corr','cRDM-cos','cRDM-cos-sqrt','cRDM-cos-uniprewh','cRDM-cos-multiprewh','multiDepend'};
