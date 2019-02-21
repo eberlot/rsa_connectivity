@@ -11,10 +11,10 @@ function [predG,varargout]=predictGfromTransform(G1,T,varargin)
 % OUTPUT:
 % - predG:  predicted G matrix
 %
-% VARARGOUT:
-% - r: correlation between predG and G2
-% - cosDist: cosine distance between predG and G2 (if G2 provided)
-%
+% VARARGOUT (if true G given):
+% - r:          correlation between predG and G2
+% - corDist:    correlation distance between predG and G2 (if G2 provided)
+% - cosDist:    cosine ditance between predG and G2 (if G2 provided)
 vararginoptions(varargin,{'G2'}); 
 
 % decompose G1 - eigenvalue decomposition
@@ -26,13 +26,15 @@ U1          = bsxfun(@times,V1,ssqrt(l'));
 
 predG = U1*T*U1';
 
-if exists('G2')
+if exist('G2')
     % assess the fit
     Gtrue   = rsa_vectorizeIPMfull(G2);
     Gpred   = rsa_vectorizeIPMfull(predG);
     cor     = corr(Gtrue',Gpred');
+    corDist = pdist([Gtrue;Gpred],'correlation');
     cosDist = pdist([Gtrue;Gpred],'cosine');
     varargout(1)={cor};
-    varargout(2)={cosDist};
+    varargout(2)={corDist};
+    varargout(3)={cosDist};
 end
 
