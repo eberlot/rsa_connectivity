@@ -1,13 +1,23 @@
 function varargout = alexnet_connect(what,varargin)
-baseDir = '/Users/Eva/Documents/Data/rsa_connectivity';
+baseDir = '/Users/Eva/Documents/Data/rsa_connectivity/alexnet';
 load(fullfile(baseDir,'imageActivations_alexNet_4Eva'),'activations_rand');
 act = activations_rand;
 clear activations_rand;
 
 switch what
-    case 'run_job'
+    case 'run_all'
+        figOn=1;
+        %% run the whole script 
+        vararginoptions(varargin,{'figOn'});
+        alexnet_connect('run_calcConnect','figOn',figOn);
+        alexnet_connect('run_deriveOrder');
+    case 'run_calcConnect'
+        % gets the first and second level metrics
+        % first level: G, RDM
+        % second level: univariate / RDM connect, transformation of Gs
+        % saves the outputs
         figOn = 1;
-        vararginoptions(varargin,{'figOn'})
+        vararginoptions(varargin,{'figOn'});
         %% 1) estimate first level metrics (G, RDM)
         [G,RDM,U] = alexnet_connect('estimate_firstLevel',figOn);
         %% 2) estimate second level metrics (between RDMs, Gs)
@@ -18,14 +28,27 @@ switch what
         % partialcorri(RDM(8,:)',RDM([1:7],:)','Rows','complete');
         % 2c) calculate transformation matrices T between Gs
         alpha{3} = alexnet_connect('transformG',G,figOn);
-        %% 3) estimate the layer ordering based on distance metrics
-        orderDist = alexnet_connect('layer_order',alpha(1:2),'dist');  
-       %% 4) estimate the layer ordering based on the transformation metrics
-       
-       varargout{1}=orderDist;
-       % t=getrow(T,T.l1==4&T.l2==6);  % choose layers of interest
-       % alexnet_connect('plotTransform',rsa_squareIPMfull(t.T));
-        
+        varargout{1}=alpha;
+        %% save the variables
+        save(fullfile(baseDir,'alexnet_G'),'G');
+        save(fullfile(baseDir,'alexnet_RDM'),'RDM');
+        save(fullfile(baseDir,'alexnet_alpha'),'alpha');
+    case 'run_deriveOrder'
+        % calculate the order of layers based on metrics
+        load(fullfile(baseDir,'alexnet_alpha'),'alpha'); 
+        %% 1) estimate the layer ordering based on distance metrics (undirected)
+        O_und = alexnet_connect('layer_order_undirected',alpha(1:2),'dist');
+        %% 2) determine which are the most likely borders
+        [b1,b2]=alexnet_connect('mostLikely_borders',O_und);
+        %% 3) calculate the directed flow
+        metrics={'corDist','scaleDist','diagRange','dimension'};
+        O_dir = alexnet_connect('layer_order_directed',alpha{3},metrics,b1,b2);
+        %% 4) save the estimated order of layers (undirected and directed)
+        save(fullfile(baseDir,'alexnet_alpha_undirected'),'-struct','O_und');
+        save(fullfile(baseDir,'alexnet_alpha_directed'),'-struct','O_dir');
+        varargout{1}=O_und;
+        varargout{2}=O_dir;
+    
     case 'estimate_firstLevel'
         %% estimate metrics on first level (i.e. *per* layer)
         % - G matrices per layer
@@ -150,7 +173,7 @@ switch what
                 hold on;
                 drawline(0,'dir','horz');
                 drawline(0,'dir','vert');
-                title('MDS representation - %s distance');
+                title('MDS representation - %s distance',aType{i});
             end
     case 'transformG'
         %% calculate the transformation matrix between Gs
@@ -303,30 +326,64 @@ switch what
                 ylabel('corr(trueG - predG)');
             end
             
-    case 'layer_order'
-            %% estimate the order between layers for a given metric
-            alpha=varargin{1};
-            var=varargin{2}; % which variable to consider
-            nAlpha=size(alpha,2); % number of cells in the cell array
-            
-            OO=[]; O=[];
-            for a=1:nAlpha
-                for i=unique(alpha{a}.distType)'
-                    A=getrow(alpha{a},alpha{a}.distType==i);
-                    [layer1,layer8]=alexnet_connect('determine_borders',A,var);
-                    % calculate order from layer1 and layer8
-                    order1=alexnet_connect('estimate_order',A,layer1,var);
-                    order2=alexnet_connect('estimate_order',A,layer8,var);
-                    % determine if matching orders - accuracy
-                    O.accu        = sum(order1==fliplr(order2))/length(order1);
-                    O.order1      = order1;
-                    O.order2      = fliplr(order2);
-                    O.distType    = i;
-                    O.alphaType   = a;
-                    OO=addstruct(OO,O);
-                end
+    case 'layer_order_undirected'
+        %% estimate the order between layers for a given metric (undirected)
+        alpha   = varargin{1};
+        var     = varargin{2}; % which variable to consider
+        nAlpha=size(alpha,2); % number of cells in the cell array 
+        OO=[]; 
+        for a=1:nAlpha
+            for i=unique(alpha{a}.distType)'
+                A=getrow(alpha{a},alpha{a}.distType==i);
+                [layer1,layer8]=alexnet_connect('determine_borders',A,var);
+                % calculate order from layer1 and layer8
+                O.order1 = alexnet_connect('estimate_order_undir',A,layer1,var);
+                O.order2 = fliplr(alexnet_connect('estimate_order_undir',A,layer8,var));
+                % determine if matching orders - accuracy
+                O.accu        = sum(O.order1==O.order2)/length(O.order1);
+                O.distType    = i;
+                O.distName    = {var};
+                O.alphaType   = a;
+                % here determine the pairwise (neighbour) distances between layers
+                O.nDist1 = alexnet_connect('neighbour_distances',A,O.order1,var,'undirected');
+                O.nDist2 = alexnet_connect('neighbour_distances',A,O.order2,var,'undirected');
+                OO=addstruct(OO,O);
             end
-            varargout{1}=O;
+        end
+        varargout{1}=OO;
+    case 'layer_order_directed'
+        %% estimate the order between layers for a given metric (directed)
+        alpha   = varargin{1};
+        var     = varargin{2}; % which variable to consider
+        b1      = varargin{3}; % most likely borders
+        b2      = varargin{4};        
+        % estimate in two ways: 1) most likely borders, 2) metric-specified
+        O_dir = [];
+        for m=1:length(var)
+            for b=1:2 % border type
+                if b==2 % specify by metric
+                    [B1,B2] = alexnet_connect('determine_borders',alpha,var{m});
+                else
+                    B1=b1;
+                    B2=b2;
+                end
+                d1 = getrow(alpha,alpha.l1==B1 & alpha.l2==B2);
+                d2 = getrow(alpha,alpha.l1==B2 & alpha.l2==B1);
+                if d1.(var{m}) > d2.(var{m}) % should be more difficult to get from first to last, then the opposite
+                    O.order = alexnet_connect('estimate_order_dir',alpha,B1,var{m});
+                else
+                    O.order = alexnet_connect('estimate_order_dir',alpha,B2,var{m});
+                end
+                O.distType    = m;
+                O.distName    = {var{m}};
+                O.alphaType   = 3;
+                O.borderType  = b;
+                % here determine the pairwise (neighbour) distances between layers
+                O.nDist = alexnet_connect('neighbour_distances',alpha,O.order,var{m},'directed');
+                O_dir = addstruct(O_dir,O);
+            end
+        end
+        varargout{1}=O_dir;
         case 'determine_borders'
             % determine which layer is first and last
             A=varargin{1};
@@ -334,16 +391,56 @@ switch what
             [~,j]=max(A.(var));
             varargout{1}=A.l1(j);
             varargout{2}=A.l2(j);
-        case 'estimate_order'
-            % estimate order from first / last layer
+        case 'estimate_order_undir'
+            % estimate order from first / last layer - undirected
             A   = varargin{1};      % structure with distances
             ind = varargin{2};    % which layer to start from
             var = varargin{3};    % which variable to use as metric
-            RDM = rsa_squareRDM((A.(var)(A.l1~=A.l2 & A.l2>A.l1))'); % first reconstruct RDM
-            % for now l2 has to be larger than l1 (TO DO - make flexible
-            % for T which are not symmetric)
+            RDM = rsa_squareRDM(A.(var)'); % first reconstruct RDM
             [~,order]=sort(RDM(ind,:)); % now sort from smaller -> largest dist
             varargout{1}=order;
+        case 'estimate_order_dir'
+             % estimate order from first / last layer - undirected
+            A   = varargin{1};      % structure with distances
+            ind = varargin{2};    % which layer to start from
+            var = varargin{3};    % which variable to use as metric
+            order = zeros(1,max(A.l1));
+            order(1)=ind;
+            for i = 2:length(order)
+                t = getrow(A,A.l1==order(i-1));
+                [~,ord]=sort(t.(var));
+                inter = intersect(order,ord);
+                ord = ord(~ismember(ord,inter),:); % remove any previously chosen elements 
+                order(i) = ord(1);
+            end
+            varargout{1}=order;
+        case 'mostLikely_borders'
+            O = varargin{1}; % order structure (across different metrics)
+            border=[O.order1(:,1);O.order2(:,1);O.order1(:,end);O.order2(:,end)];
+            [n,bin] = hist(border,unique(border));
+            [~,idx] = sort(-n); % swap the order
+            % corresponding 2 most common bordervalues
+            b1=bin(idx(1));
+            b2=bin(idx(2));
+            varargout{1}=b1;
+            varargout{2}=b2;
+        case 'neighbour_distances'
+            % determine the neighbouring distances for the estimated 
+            % ordering of layers
+            alpha = varargin{1};
+            order = varargin{2};
+            var   = varargin{3};
+            graphType = varargin{4}; % directed or undirected
+            nDist = zeros(1,length(order)-1); % neighbour distance pre-alloc
+            for i=1:length(nDist)
+                switch graphType
+                    case 'directed'
+                        nDist(i)=alpha.(var)(alpha.l1==order(i) & alpha.l2==order(i+1));
+                    case 'undirected'
+                        nDist(i)=alpha.(var)(ismember(alpha.l1,[order(i),order(i+1)]) & ismember(alpha.l2,[order(i),order(i+1)]));
+                end
+            end
+            varargout{1}=nDist;          
 end
 end
 
@@ -357,39 +454,3 @@ for i = 1:nOUT
     vout{i} = IN{i};
 end
 end
-
-% function corr = detCorr(A,trueOrder)
-% % determines correctedness of adjacency matrix given the true order
-% nNode = size(A,1); % number of nodes
-% correct = zeros(nNode,1);
-% for i=1:nNode
-%     [~,ind]=sort(A(i,:));
-%     pos=find(trueOrder==i);
-%     % go to the left
-%     leftSide=trueOrder(pos-1:-1:1); %order from closest to furthest dist
-%     if length(leftSide)>1
-%         lS=zeros(1,length(leftSide));
-%         for k=1:length(lS)
-%             lS(k)=find(leftSide(k)==ind);
-%         end
-%         % determine if correct
-%         c1=sum(diff(lS)>0)==(length(lS)-1);
-%     else
-%         c1=1;
-%     end
-%     % go to the right
-%     rightSide=trueOrder(pos+1:end); %order from closest to furthest dist
-%     if length(rightSide)>1
-%         rS=zeros(1,length(rightSide));
-%         for k=1:length(rS)
-%             rS(k)=find(rightSide(k)==ind);
-%         end
-%         % determine if correct
-%         c2=sum(diff(rS)>0)==(length(rS)-1);
-%     else
-%         c2=1;
-%     end
-%     correct(i)=floor((c1+c2)/2);
-% end
-% corr=sum(correct)/length(correct);
-% end
