@@ -48,7 +48,13 @@ switch what
         save(fullfile(baseDir,'alexnet_alpha_directed'),'-struct','O_dir');
         varargout{1}=O_und;
         varargout{2}=O_dir;
-    
+    case 'plot_estimatedOrder'
+        %% plots the estimated order of layers
+        U = load('alexnet_alpha_undirected');
+        alexnet_connect('plot_estOrder_undirected',U);
+        D = load('alexnet_alpha_directed');
+        alexnet_connect('plot_estOrder_directed',D);
+        
     case 'estimate_firstLevel'
         %% estimate metrics on first level (i.e. *per* layer)
         % - G matrices per layer
@@ -129,7 +135,7 @@ switch what
             alexnet_connect('plot_distLayer',alpha,aType,dataType);
         end
         case 'calcDist'
-            % calculate correlation / cosine distances
+        % calculate correlation / cosine distances
         rdm = varargin{1};
         distType = varargin{2};
         % calculate distance metric from the input
@@ -173,7 +179,7 @@ switch what
                 hold on;
                 drawline(0,'dir','horz');
                 drawline(0,'dir','vert');
-                title('MDS representation - %s distance',aType{i});
+                title(sprintf('MDS representation - %s distance',aType{i}));
             end
     case 'transformG'
         %% calculate the transformation matrix between Gs
@@ -400,7 +406,7 @@ switch what
             [~,order]=sort(RDM(ind,:)); % now sort from smaller -> largest dist
             varargout{1}=order;
         case 'estimate_order_dir'
-             % estimate order from first / last layer - undirected
+             % estimate order from first / last layer - directed
             A   = varargin{1};      % structure with distances
             ind = varargin{2};    % which layer to start from
             var = varargin{3};    % which variable to use as metric
@@ -440,7 +446,45 @@ switch what
                         nDist(i)=alpha.(var)(ismember(alpha.l1,[order(i),order(i+1)]) & ismember(alpha.l2,[order(i),order(i+1)]));
                 end
             end
-            varargout{1}=nDist;          
+            varargout{1}=nDist;        
+            
+    case 'plot_estOrder_undirected'
+        % plot the order for undirected graph
+        T=varargin{1}; % data structure
+        distType={'univariate','multivariate'};
+        alphaType={'correlation','cosine'};
+        for d=1:length(distType)
+            figure
+            indx=1;
+            for m=1:length(alphaType)
+                t=getrow(T,T.distType==d & T.alphaType==m);
+                subplot(2,2,indx)
+                pos = [0 cumsum(t.nDist1)];
+                scatterplot(pos',zeros(size(pos))','label',t.order1);
+                title(sprintf('%s-%s direction 1',distType{d},alphaType{m}));
+                subplot(2,2,indx+1)
+                pos = [0 cumsum(t.nDist2)];
+                scatterplot(pos',zeros(size(pos))','label',t.order2);
+                title(sprintf('%s-%s direction 2',distType{d},alphaType{m}));
+                indx=indx+2;
+            end
+        end
+    case 'plot_estOrder_directed'
+        % plot the order for directed graph
+        TT=varargin{1}; % data structure
+        distName=unique(TT.distName);
+        borderType={'external','self-determined'};
+        for b=1:2
+            T=getrow(TT,TT.borderType==b);
+            figure
+            for d=1:length(distName)
+                t=getrow(T,strcmp(T.distName,distName{d}));
+                subplot(length(distName),1,d);
+                pos = [0 cumsum(t.nDist)];
+                scatterplot(pos',zeros(size(pos))','label',t.order);
+                title(sprintf('%s - %s borders',distName{d},borderType{b}));
+            end
+        end
 end
 end
 
