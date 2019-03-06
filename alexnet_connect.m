@@ -1,5 +1,33 @@
 function varargout = alexnet_connect(what,varargin)
-baseDir = '/Users/Eva/Documents/Data/rsa_connectivity/alexnet';
+% function varargout = alexnet_connect(what,varargin)
+% 1) Calculates metrics of 'connectivity' on alexnet activation units
+% 2) Determines the order of layers based on the calculated metrics
+% 3) Plots the estimated order (and intermediate steps) - optional
+% usage to run all functionality: alexnet_connect('run_all','figOn',1);
+%
+% INPUT:
+%       - case: which case to run; if all: alexnet_connect('run_all');
+%
+% VARARGIN:
+%       - baseDir: where the alexNet mat file with activations is stored
+%       - figOn: whether intermediate results are plotted (0/1; default:1)
+%
+% OUTPUTS:
+%       - alexnet_RDM:      matrix with vectorized RDM for each layer
+%                           (size: numLayer x numDist)
+%       - alexnet_G:        cell array with G for each layer stored as a matrix
+%       - alexnet_alpha:    structure array with three structures:
+%                           1) univariate metrics of distances
+%                           2) multivariate metrics of distances (RDM)
+%                           3) transformation metrics of G matrices
+%       - order_undirected: structure with the estimated layer order for
+%                           undirected metrics (alpha uni and multivariate)
+%       - order_undirected: structure with the estimated layer order for
+%                           directed metrics (transformation between Gs)
+%       *note*: all outputs are saved in the baseDir
+%
+
+baseDir = '~/Documents/Data/rsa_connectivity/alexnet';
 load(fullfile(baseDir,'imageActivations_alexNet_4Eva'),'activations_rand');
 act = activations_rand;
 clear activations_rand;
@@ -11,6 +39,9 @@ switch what
         vararginoptions(varargin,{'figOn'});
         alexnet_connect('run_calcConnect','figOn',figOn);
         alexnet_connect('run_deriveOrder');
+        if figOn
+            alexnet_connect('plot_estimatedOrder');
+        end
     case 'run_calcConnect'
         % gets the first and second level metrics
         % first level: G, RDM
@@ -35,7 +66,8 @@ switch what
         save(fullfile(baseDir,'alexnet_alpha'),'alpha');
     case 'run_deriveOrder'
         % calculate the order of layers based on metrics
-        load(fullfile(baseDir,'alexnet_alpha'),'alpha'); 
+        a=load(fullfile(baseDir,'alexnet_alpha'),'alpha'); 
+        alpha=a.alpha;
         %% 1) estimate the layer ordering based on distance metrics (undirected)
         O_und = alexnet_connect('layer_order_undirected',alpha(1:2),'dist');
         %% 2) determine which are the most likely borders
@@ -44,17 +76,25 @@ switch what
         metrics={'corDist','scaleDist','diagRange','dimension'};
         O_dir = alexnet_connect('layer_order_directed',alpha{3},metrics,b1,b2);
         %% 4) save the estimated order of layers (undirected and directed)
-        save(fullfile(baseDir,'alexnet_alpha_undirected'),'-struct','O_und');
-        save(fullfile(baseDir,'alexnet_alpha_directed'),'-struct','O_dir');
+        save(fullfile(baseDir,'order_undirected'),'-struct','O_und');
+        save(fullfile(baseDir,'order_directed'),'-struct','O_dir');
         varargout{1}=O_und;
         varargout{2}=O_dir;
     case 'plot_estimatedOrder'
         %% plots the estimated order of layers
-        U = load('alexnet_alpha_undirected');
-        alexnet_connect('plot_estOrder_undirected',U);
-        D = load('alexnet_alpha_directed');
-        alexnet_connect('plot_estOrder_directed',D);
-        
+        U = load(fullfile(baseDir,'order_undirected'));
+        alexnet_connect('plot_order_undirected',U);
+        D = load(fullfile(baseDir,'order_directed'));
+        alexnet_connect('plot_order_directed',D);
+    case 'plot_metricRelations'
+        T=load(fullfile(baseDir,'alexnet_alpha'));
+        D1=T.alpha{1};
+        D2=T.alpha{2};
+        D3=T.alpha{3};
+        alexnet_connect('plot_metrics_undir',D1,D2);
+        alexnet_connect('plot_metrics_dir',D3);
+        keyboard;
+    
     case 'estimate_firstLevel'
         %% estimate metrics on first level (i.e. *per* layer)
         % - G matrices per layer
@@ -74,48 +114,49 @@ switch what
         varargout{1}=G;
         varargout{2}=RDM;
         varargout{3}=U;
+        fprintf('Done estimating first level metrics: uni, RDM, G.\n');
         case 'estimateG'
-        % estimates G from input (for each layer)
-        nLayer = size(act,1);
-        G = cell(nLayer,1);
-        for i=1:nLayer
-            nVox = size(act{i},2);
-            G{i} = act{i}*act{i}'/nVox;
-            G{i} = G{i}./trace(G{i});
-        end
-        varargout{1}=vout(G);
+            % estimates G from input (for each layer)
+            nLayer = size(act,1);
+            G = cell(nLayer,1);
+            for i=1:nLayer
+                nVox = size(act{i},2);
+                G{i} = act{i}*act{i}'/nVox;
+                G{i} = G{i}./trace(G{i});
+            end
+            varargout{1}=vout(G);
         case 'estimateRDM'
-        % estimates RDM from input G matrices (for each layer)
-        G=varargin{1}; % input: G matrices (per layer)
-        nLayer = size(G,2);
-        nCond = size(G{1},1);
-        % contrast matrix for G->distances
-        C = indicatorMatrix('allpairs',1:nCond);
-        RDM = zeros(nLayer,size(C,1));
-        for i=1:nLayer
-            RDM(i,:) = diag(C*G{i}*C')';  
-        end
-        varargout{1}=RDM;
+            % estimates RDM from input G matrices (for each layer)
+            G=varargin{1}; % input: G matrices (per layer)
+            nLayer = size(G,2);
+            nCond = size(G{1},1);
+            % contrast matrix for G->distances
+            C = indicatorMatrix('allpairs',1:nCond);
+            RDM = zeros(nLayer,size(C,1));
+            for i=1:nLayer
+                RDM(i,:) = diag(C*G{i}*C')';
+            end
+            varargout{1}=RDM;
         case 'plotRDM'
-            %plot calculated RDMs 
-        RDM = varargin{1};
-        nRDM = size(RDM,1);
-        figure
-        for i=1:nRDM
-            subplot(2,4,i);
-            imagesc(rsa_squareRDM(RDM(i,:)));
-            colormap('hot');
-            title(sprintf('RDM-layer%d',i));
-        end
+            %plot calculated RDMs
+            RDM = varargin{1};
+            nRDM = size(RDM,1);
+            figure
+            for i=1:nRDM
+                subplot(2,4,i);
+                imagesc(rsa_squareRDM(RDM(i,:)));
+                colormap('hot');
+                title(sprintf('RDM-layer%d',i));
+            end
         case 'estimateUnivariate'
             % estimate a univariate metric - mean response per condition
-        nLayer = size(act,1);
-        nStim  = size(act{1},1);
-        U = zeros(nLayer,nStim);
-        for i=1:nLayer
-            U(i,:)=mean(act{i},2)';
-        end
-        varargout{1}=U;
+            nLayer = size(act,1);
+            nStim  = size(act{1},1);
+            U = zeros(nLayer,nStim);
+            for i=1:nLayer
+                U(i,:)=mean(act{i},2)';
+            end
+            varargout{1}=U;
         
     case 'estimate_distance' 
         %% esimate distance between layers - 2nd level
@@ -131,35 +172,36 @@ switch what
             alpha = addstruct(alpha,D);
         end
         varargout{1}=alpha;
+        fprintf('Done estimating undirected distance metrics: %s.\n',dataType);
         if fig
             alexnet_connect('plot_distLayer',alpha,aType,dataType);
         end
         case 'calcDist'
-        % calculate correlation / cosine distances
-        rdm = varargin{1};
-        distType = varargin{2};
-        % calculate distance metric from the input
-        % input: N x D matrix (N - number of RDMs; D - distance pairs)
-        % dist types: 'correlation' or 'cosine'
-        % output: structure D, with fields:
-        %   - D: pairwise distances of RDMs
-        %   - l1: indicator which rdm / layer taken as first
-        %   - l2: indicator which rdm ; layer taken as second
-        switch (distType)
-            case 'correlation'
-                % additional step for correlation - first remove the mean
-                rdm  = bsxfun(@minus,rdm,mean(rdm,2));
-        end
-        nRDM = size(rdm,1);
-        rdm  = normalizeX(rdm);
-        tmpR  = rdm*rdm'; % correlation across RDMs
-        D.dist = 1-rsa_vectorizeRDM(tmpR)'; % distances
-        ind=indicatorMatrix('allpairs',(1:nRDM));
-        % determine each element of the pair
-        [~,D.l1]=find(ind==1);
-        i=ismember(ind,-1);
-        D.l2 = sum(cumprod(i==0,2),2)+1;
-        varargout{1}=D;
+            % calculate correlation / cosine distances
+            rdm = varargin{1};
+            distType = varargin{2};
+            % calculate distance metric from the input
+            % input: N x D matrix (N - number of RDMs; D - distance pairs)
+            % dist types: 'correlation' or 'cosine'
+            % output: structure D, with fields:
+            %   - D: pairwise distances of RDMs
+            %   - l1: indicator which rdm / layer taken as first
+            %   - l2: indicator which rdm ; layer taken as second
+            switch (distType)
+                case 'correlation'
+                    % additional step for correlation - first remove the mean
+                    rdm  = bsxfun(@minus,rdm,mean(rdm,2));
+            end
+            nRDM = size(rdm,1);
+            rdm  = normalizeX(rdm);
+            tmpR  = rdm*rdm'; % correlation across RDMs
+            D.dist = 1-rsa_vectorizeRDM(tmpR)'; % distances
+            ind=indicatorMatrix('allpairs',(1:nRDM));
+            % determine each element of the pair
+            [~,D.l1]=find(ind==1);
+            i=ismember(ind,-1);
+            D.l2 = sum(cumprod(i==0,2),2)+1;
+            varargout{1}=D;
         case 'plot_distLayer'
             % plot distances estimated between layers
             alpha=varargin{1};
@@ -209,21 +251,22 @@ switch what
             end
         end
         TT = alexnet_connect('characterizeT',TT,G,figOn);
+        fprintf('Done estimating transformation between G matrices.\n');
         varargout{1}=TT;
         case 'plotTransform'
-        % examine how T looks like
-        T=varargin{1};
-        figure
-        subplot(131)
-        imagesc(T);
-        title('Transformation T');
-        [u,s,~]=svd(T);
-        subplot(132)
-        imagesc(u);
-        title('SVD component (u)');
-        subplot(133)
-        imagesc(s);
-        title('SVD component (s)');
+            % examine how T looks like
+            T=varargin{1};
+            figure
+            subplot(131)
+            imagesc(T);
+            title('Transformation T');
+            [u,s,~]=svd(T);
+            subplot(132)
+            imagesc(u);
+            title('SVD component (u)');
+            subplot(133)
+            imagesc(s);
+            title('SVD component (s)');
         case 'characterizeT'
             % characterize different aspects of transformation matrix T
             T=varargin{1};
@@ -231,7 +274,7 @@ switch what
             figOn=varargin{3};
             [T.scalar,T.scaleFit,T.scaleDist]   = alexnet_connect('scaleT',T,G);
             T.diagRange                         = alexnet_connect('diagRange',T);
-            T.rank                              = alexnet_connect('rank',T);  
+            T.rank                              = alexnet_connect('rank',T);
             [T.dimFit,T.dimDist,T.dimension]    = alexnet_connect('dimensionT',T,G,figOn);
             varargout{1} = T; % output - added fields characterize T
         case 'scaleT'
@@ -244,16 +287,16 @@ switch what
             scaleFit    = zeros(nPair,1);
             scaleDist   = zeros(nPair,1);
             for i=1:nPair
-                Tr = rsa_squareIPMfull(T.T(i,:));
-                scalar(i) = mean(diag(Tr)); % which scalar
-                scaleTr = eye(size(Tr))*scalar(i); % simplified transform - only scalar
+                Tr          = rsa_squareIPMfull(T.T(i,:));
+                scalar(i)   = mean(diag(Tr)); % which scalar
+                scaleTr     = eye(size(Tr))*scalar(i); % simplified transform - only scalar
                 [~,scaleFit(i),scaleDist(i)] = predictGfromTransform(G{T.l1(i)},scaleTr,'G2',G{T.l2(i)});
             end
             varargout{1}=scalar;
             varargout{2}=scaleFit;
             varargout{3}=scaleDist; % correlation distance - how different from a scaled version
         case 'diagRange'
-            % calculate the range of diagonal values for each T 
+            % calculate the range of diagonal values for each T
             T=varargin{1};
             nStim           = size(rsa_squareIPMfull(T.T(1,:)),1);
             diagElement     = T.T(:,1:nStim+1:end);
@@ -304,7 +347,7 @@ switch what
             ind2        = varargin{3};
             cutoff      = varargin{4};
             nDim        = size(dimensions,2);
-            
+
             figure
             subplot(131)
             plot(1:nDim,dimensions(ind1~=ind2,:));
@@ -336,7 +379,7 @@ switch what
         %% estimate the order between layers for a given metric (undirected)
         alpha   = varargin{1};
         var     = varargin{2}; % which variable to consider
-        nAlpha=size(alpha,2); % number of cells in the cell array 
+        nAlpha  = size(alpha,2); % number of cells in the cell array 
         OO=[]; 
         for a=1:nAlpha
             for i=unique(alpha{a}.distType)'
@@ -356,6 +399,7 @@ switch what
                 OO=addstruct(OO,O);
             end
         end
+        fprintf('Done estimating order of layers: undirected.\n');
         varargout{1}=OO;
     case 'layer_order_directed'
         %% estimate the order between layers for a given metric (directed)
@@ -389,6 +433,7 @@ switch what
                 O_dir = addstruct(O_dir,O);
             end
         end
+        fprintf('Done estimating order of layers: directed.\n');
         varargout{1}=O_dir;
         case 'determine_borders'
             % determine which layer is first and last
@@ -406,7 +451,7 @@ switch what
             [~,order]=sort(RDM(ind,:)); % now sort from smaller -> largest dist
             varargout{1}=order;
         case 'estimate_order_dir'
-             % estimate order from first / last layer - directed
+            % estimate order from first / last layer - directed
             A   = varargin{1};      % structure with distances
             ind = varargin{2};    % which layer to start from
             var = varargin{3};    % which variable to use as metric
@@ -416,7 +461,7 @@ switch what
                 t = getrow(A,A.l1==order(i-1));
                 [~,ord]=sort(t.(var));
                 inter = intersect(order,ord);
-                ord = ord(~ismember(ord,inter),:); % remove any previously chosen elements 
+                ord = ord(~ismember(ord,inter),:); % remove any previously chosen elements
                 order(i) = ord(1);
             end
             varargout{1}=order;
@@ -431,7 +476,7 @@ switch what
             varargout{1}=b1;
             varargout{2}=b2;
         case 'neighbour_distances'
-            % determine the neighbouring distances for the estimated 
+            % determine the neighbouring distances for the estimated
             % ordering of layers
             alpha = varargin{1};
             order = varargin{2};
@@ -446,9 +491,9 @@ switch what
                         nDist(i)=alpha.(var)(ismember(alpha.l1,[order(i),order(i+1)]) & ismember(alpha.l2,[order(i),order(i+1)]));
                 end
             end
-            varargout{1}=nDist;        
-            
-    case 'plot_estOrder_undirected'
+            varargout{1}=nDist;
+
+    case 'plot_order_undirected'
         % plot the order for undirected graph
         T=varargin{1}; % data structure
         distType={'univariate','multivariate'};
@@ -457,19 +502,21 @@ switch what
             figure
             indx=1;
             for m=1:length(alphaType)
-                t=getrow(T,T.distType==d & T.alphaType==m);
+                t   = getrow(T,T.distType==d & T.alphaType==m);
                 subplot(2,2,indx)
                 pos = [0 cumsum(t.nDist1)];
-                scatterplot(pos',zeros(size(pos))','label',t.order1);
+                scatterplot(pos',zeros(size(pos))','label',t.order1,'markersize',8);
+                drawline(0,'dir','horz');
                 title(sprintf('%s-%s direction 1',distType{d},alphaType{m}));
                 subplot(2,2,indx+1)
                 pos = [0 cumsum(t.nDist2)];
-                scatterplot(pos',zeros(size(pos))','label',t.order2);
+                scatterplot(pos',zeros(size(pos))','label',t.order2,'markersize',8);
+                drawline(0,'dir','horz');
                 title(sprintf('%s-%s direction 2',distType{d},alphaType{m}));
-                indx=indx+2;
+                indx = indx+2;
             end
         end
-    case 'plot_estOrder_directed'
+    case 'plot_order_directed'
         % plot the order for directed graph
         TT=varargin{1}; % data structure
         distName=unique(TT.distName);
@@ -478,12 +525,45 @@ switch what
             T=getrow(TT,TT.borderType==b);
             figure
             for d=1:length(distName)
-                t=getrow(T,strcmp(T.distName,distName{d}));
+                t   = getrow(T,strcmp(T.distName,distName{d}));
                 subplot(length(distName),1,d);
                 pos = [0 cumsum(t.nDist)];
-                scatterplot(pos',zeros(size(pos))','label',t.order);
+                scatterplot(pos',zeros(size(pos))','label',t.order,'markersize',8);
+                drawline(0,'dir','horz');
                 title(sprintf('%s - %s borders',distName{d},borderType{b}));
             end
+        end
+        
+    case 'plot_metrics_undir'
+        D1=varargin{1}; % univariate
+        D2=varargin{2}; % multivariate
+        figure
+        subplot(221)
+        plt.scatter(D1.dist(D1.distType==1),D1.dist(D1.distType==2));
+        xlabel(unique(D1.distName(D1.distType==1)));ylabel(unique(D1.distName(D1.distType==2)));
+        title('univariate only');
+        subplot(222)
+        plt.scatter(D2.dist(D2.distType==1),D2.dist(D2.distType==2));
+        xlabel(unique(D2.distName(D2.distType==1)));ylabel(unique(D2.distName(D2.distType==2)));
+        title('multivariate only');
+        subplot(223)
+        plt.scatter(D1.dist(D1.distType==1),D2.dist(D2.distType==1));
+        xlabel('correlation uni');ylabel('correlation multi');
+        title('across');
+        subplot(224)
+        plt.scatter(D1.dist(D1.distType==2),D2.dist(D2.distType==2));
+        xlabel('cosine uni');ylabel('cosine multi');
+        title('across');
+    case 'plot_metrics_dir'
+        D=varargin{1}; % directed metrics
+        keyboard;
+        metrics={'corDist','scaleDist','diagRange','dimension'};
+        ind=indicatorMatrix('allpairs',1:length(metrics));
+        figure
+        for i=1:size(ind,1)
+            subplot(2,3,i)
+            plt.scatter(D.(metrics{ind(i,:)==1}),D.(metrics{ind(i,:)==-1}),'subset',D.l1~=D.l2);
+            xlabel(metrics{ind(i,:)==1});ylabel(metrics{ind(i,:)==-1});
         end
 end
 end
