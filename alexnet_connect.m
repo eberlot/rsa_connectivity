@@ -31,6 +31,7 @@ baseDir = '~/Documents/Data/rsa_connectivity/alexnet';
 load(fullfile(baseDir,'imageActivations_alexNet_4Eva'),'activations_rand');
 act = activations_rand;
 clear activations_rand;
+corrOrder = [8 1 7 6 4 2 3 5];
 
 switch what
     case 'run_all'
@@ -73,26 +74,34 @@ switch what
         %% 2) determine which are the most likely borders
         [b1,b2]=alexnet_connect('mostLikely_borders',O_und);
         %% 3) calculate the directed flow
-        metrics={'corDist','scaleDist','diagRange','dimension'};
+        metrics={'corDist','scaleDist','diagDist','diagRange','dimension'};
         O_dir = alexnet_connect('layer_order_directed',alpha{3},metrics,b1,b2);
-        %% 4) save the estimated order of layers (undirected and directed)
+        %% 4) calculate the order with the correct start
+        O_uStart = alexnet_connect('layer_order_undir_correctStart',alpha(1:2),'dist');
+        O_dStart = alexnet_connect('layer_order_dir_correctStart',alpha{3},metrics);
+        %% 5) save the estimated order of layers (undirected and directed)
         save(fullfile(baseDir,'order_undirected'),'-struct','O_und');
         save(fullfile(baseDir,'order_directed'),'-struct','O_dir');
-        varargout{1}=O_und;
-        varargout{2}=O_dir;
+        save(fullfile(baseDir,'order_undir_corStart'),'-struct','O_uStart');
+        save(fullfile(baseDir,'order_dir_corStart'),'-struct','O_dStart');
+        varargout{1}={O_und O_dir O_uStart O_dStart};
     case 'plot_estimatedOrder'
         %% plots the estimated order of layers
         U = load(fullfile(baseDir,'order_undirected'));
         alexnet_connect('plot_order_undirected',U);
         D = load(fullfile(baseDir,'order_directed'));
         alexnet_connect('plot_order_directed',D);
+        US = load(fullfile(baseDir,'order_undir_corStart'));
+        alexnet_connect('plot_order_undir_correctStart',US);
+        DS = load(fullfile(baseDir,'order_dir_corStart'));
+        alexnet_connect('plot_order_dir_correctStart',DS);
     case 'plot_metricRelations'
         T=load(fullfile(baseDir,'alexnet_alpha'));
         D1=T.alpha{1};
         D2=T.alpha{2};
         D3=T.alpha{3};
         alexnet_connect('plot_metrics_undir',D1,D2);
-        alexnet_connect('plot_metrics_dir',D3);
+        alexnet_connect('plot_metrics_dir',D3); % add the new ones - diag-offdiag, range vs. scalar
         keyboard;
     
     case 'estimate_firstLevel'
@@ -272,7 +281,8 @@ switch what
             T=varargin{1};
             G=varargin{2};
             figOn=varargin{3};
-            [T.scalar,T.scaleFit,T.scaleDist]   = alexnet_connect('scaleT',T,G);
+            [T.scalar,T.scaleFit,T.scaleDist]   = alexnet_connect('scaleT',T,G); 
+            [T.diagFit,T.diagDist]              = alexnet_connect('diagT',T,G); 
             T.diagRange                         = alexnet_connect('diagRange',T);
             T.rank                              = alexnet_connect('rank',T);
             [T.dimFit,T.dimDist,T.dimension]    = alexnet_connect('dimensionT',T,G,figOn);
@@ -295,6 +305,21 @@ switch what
             varargout{1}=scalar;
             varargout{2}=scaleFit;
             varargout{3}=scaleDist; % correlation distance - how different from a scaled version
+        case 'diagT'
+            % how different is T from a pure diagonal T transformation
+            T=varargin{1};
+            G=varargin{2};
+            % initialize outputs
+            nPair       = size(T.T,1); % number of compared layers
+            diagFit     = zeros(nPair,1);
+            diagDist    = zeros(nPair,1);
+            for i=1:nPair
+                Tr          = rsa_squareIPMfull(T.T(i,:));
+                diagTr      = Tr.*eye(size(Tr));
+                [~,diagFit(i),diagDist(i)] = predictGfromTransform(G{T.l1(i)},diagTr,'G2',G{T.l2(i)});
+            end
+            varargout{1}=diagFit;
+            varargout{2}=diagDist; % correlation distance - how different from a scaled version
         case 'diagRange'
             % calculate the range of diagonal values for each T
             T=varargin{1};
@@ -435,6 +460,44 @@ switch what
         end
         fprintf('Done estimating order of layers: directed.\n');
         varargout{1}=O_dir;
+    case 'layer_order_undir_correctStart'
+        % determine the order of metrics given the correct start
+        alpha       = varargin{1};
+        var         = varargin{2}; % which variable to consider
+        nAlpha      = size(alpha,2); % number of cells in the cell array 
+        OO=[];
+        for a=1:nAlpha
+            for i=unique(alpha{a}.distType)'
+                A=getrow(alpha{a},alpha{a}.distType==i);
+                O.order = alexnet_connect('estimate_order_undir',A,corrOrder(1),var);
+                % determine if matching orders to the correct one - accuracy
+                O.accu        = sum(O.order==corrOrder)/length(O.order);
+                O.distType    = i;
+                O.distName    = {A.distName{1}};
+                O.alphaType   = a;
+                % here determine the pairwise (neighbour) distances between layers
+                O.nDist = alexnet_connect('neighbour_distances',A,O.order,var,'undirected');
+                OO=addstruct(OO,O);
+            end
+        end
+        varargout{1}=OO;
+    case 'layer_order_dir_correctStart'
+        % determine the order of metrics given the correct start
+        A   = varargin{1};
+        var = varargin{2}; % which variable(s) to consider
+        st = corrOrder(1);
+        OO=[];
+        for m=1:length(var)
+            t = getrow(A,A.l1==st & A.l1~=A.l2);
+            [~,order]       = sort(t.(var{m}));
+            O.order         = [st order'];
+            O.distType      = m;
+            O.distName      = {var{m}};
+            O.alphaType     = 3;
+            O.nDist         = alexnet_connect('neighbour_distances',A,O.order,var{m},'directed');
+            OO = addstruct(OO,O);
+        end
+        varargout{1}=OO;
         case 'determine_borders'
             % determine which layer is first and last
             A=varargin{1};
@@ -444,7 +507,7 @@ switch what
             varargout{2}=A.l2(j);
         case 'estimate_order_undir'
             % estimate order from first / last layer - undirected
-            A   = varargin{1};      % structure with distances
+            A   = varargin{1};    % structure with distances
             ind = varargin{2};    % which layer to start from
             var = varargin{3};    % which variable to use as metric
             RDM = rsa_squareRDM(A.(var)'); % first reconstruct RDM
@@ -452,7 +515,7 @@ switch what
             varargout{1}=order;
         case 'estimate_order_dir'
             % estimate order from first / last layer - directed
-            A   = varargin{1};      % structure with distances
+            A   = varargin{1};    % structure with distances
             ind = varargin{2};    % which layer to start from
             var = varargin{3};    % which variable to use as metric
             order = zeros(1,max(A.l1));
@@ -533,7 +596,33 @@ switch what
                 title(sprintf('%s - %s borders',distName{d},borderType{b}));
             end
         end
-        
+    case 'plot_order_undir_correctStart'
+        T=varargin{1}; % data structure
+        dataType={'univariate','multivariate'};
+        distName=unique(T.distName);
+        for dt = 1:length(dataType)
+            figure
+            for d=1:length(distName)
+                t   = getrow(T,strcmp(T.distName,distName{d}) & T.alphaType==dt);
+                subplot(length(distName),1,d);
+                pos = [0 cumsum(t.nDist)];
+                scatterplot(pos',zeros(size(pos))','label',t.order,'markersize',8);
+                drawline(0,'dir','horz');
+                title(distName{d});
+            end
+        end
+    case 'plot_order_dir_correctStart'
+          T=varargin{1}; % data structure
+          distName=unique(T.distName);
+          figure
+          for d=1:length(distName)
+              t   = getrow(T,strcmp(T.distName,distName{d}));
+              subplot(length(distName),1,d);
+              pos = [0 cumsum(t.nDist)];
+              scatterplot(pos',zeros(size(pos))','label',t.order,'markersize',8);
+              drawline(0,'dir','horz');
+              title(distName{d});
+          end
     case 'plot_metrics_undir'
         D1=varargin{1}; % univariate
         D2=varargin{2}; % multivariate
@@ -565,6 +654,116 @@ switch what
             plt.scatter(D.(metrics{ind(i,:)==1}),D.(metrics{ind(i,:)==-1}),'subset',D.l1~=D.l2);
             xlabel(metrics{ind(i,:)==1});ylabel(metrics{ind(i,:)==-1});
         end
+        
+    case 'plot_dimensions'
+        a=load(fullfile(baseDir,'alexnet_alpha'));
+        G=load('alexnet_G');
+        G=G.G;
+        t=a.alpha{3};
+        for i=1:length(corrOrder)-1 % inspect the neighbours
+            T_for   = rsa_squareIPMfull(t.T(t.l1==corrOrder(i)&t.l2==corrOrder(i+1),:)); % forward transformation
+            T_back  = rsa_squareIPMfull(t.T(t.l1==corrOrder(i+1)&t.l2==corrOrder(i),:)); % backward transformation
+            [uf,sf,vf] = svd(T_for);
+            [ub,sb,vb] = svd(T_back);
+            
+            T_rfor      = uf(:,1)*sf(1,1)*vf(:,1)';
+            T_rback     = ub(:,1)*sb(1,1)*vb(:,1)';
+            figure
+            subplot(4,5,1)
+            imagesc(G{corrOrder(i)});
+            title(sprintf('G%d',corrOrder(i)));
+            subplot(4,5,2)
+            imagesc(G{corrOrder(i+1)});
+            title(sprintf('G%d',corrOrder(i+1)));
+            subplot(4,5,3)
+            imagesc(predictGfromTransform(G{corrOrder(i)},T_rfor));
+            title(sprintf('predicted G%d',corrOrder(i+1)));
+            subplot(4,5,4)
+            imagesc(predictGfromTransform(G{corrOrder(i)},T_rback));
+            title(sprintf('predicted G%d',corrOrder(i)));
+            
+            subplot(4,5,6)
+            imagesc(T_for);
+            title(sprintf('forward full T layers %d-%d',corrOrder(i),corrOrder(i+1)));
+            subplot(4,5,7)
+            imagesc(T_back);
+            title(sprintf('back full T layers %d-%d',corrOrder(i+1),corrOrder(i)));
+            subplot(4,5,8)
+            imagesc(T_rfor);
+            title(sprintf('forward reduced T layers %d-%d',corrOrder(i),corrOrder(i+1)));
+            subplot(4,5,9)
+            imagesc(T_rback);
+            title(sprintf('back reduced T layers %d-%d',corrOrder(i+1),corrOrder(i)));
+            subplot(4,5,11)
+            hist(diag(T_for),50);
+            title(sprintf('range diagonal: %2.1f',range(diag(T_for))));
+            subplot(4,5,12)
+            hist(diag(T_back),50);
+            title(sprintf('range diagonal: %2.1f',range(diag(T_back))));
+            subplot(4,5,13)
+            hist(diag(T_rfor),50);
+            title(sprintf('range diagonal: %2.1f',range(diag(T_rfor))));
+            subplot(4,5,14)
+            hist(diag(T_rback),50);
+            title(sprintf('range diagonal: %2.1f',range(diag(T_rback))));
+            subplot(4,5,16)
+            hist(rsa_vectorizeRDM(T_for),200);
+            title(sprintf('range off-diagonal: %2.1f',range(rsa_vectorizeRDM(T_for))));
+            subplot(4,5,17)
+            hist(rsa_vectorizeRDM(T_rfor),200);
+            title(sprintf('range off-diagonal: %2.1f',range(rsa_vectorizeRDM(T_back))));
+            subplot(4,5,18)
+            hist(rsa_vectorizeRDM(T_rfor),200);
+            title(sprintf('range off-diagonal: %2.1f',range(rsa_vectorizeRDM(T_rfor))));
+            subplot(4,5,19)
+            hist(rsa_vectorizeRDM(T_rback),200);
+            title(sprintf('range off-diagonal: %2.1f',range(rsa_vectorizeRDM(T_rback))));
+            % here plot the added dimensions
+            subplot(4,5,[10,15]);
+            plot(t.dimFit(t.l1==corrOrder(i)&t.l2==corrOrder(i+1),:),'linewidth',2);
+            hold on;
+            plot(t.dimFit(t.l1==corrOrder(i+1)&t.l2==corrOrder(i),:),'--','linewidth',2);
+            legend({'forward','backward'},'Location','SouthEast');
+        end
+    case 'plot_metrics_trueOrder'
+        % plot relationship between metrics given the true order (distance)
+        var = 'diagRange';
+        vararginoptions(varargin,{'var'}); % which variable to plot
+        a=load(fullfile(baseDir,'alexnet_alpha'));
+        t=a.alpha{3};
+        % determine the true order
+        trueOrdDist = zeros(size(t.l1));
+        rangeOff = zeros(size(t.l1));
+        for i=1:size(t.l1,1)
+            trueOrdDist(i)  = find(corrOrder==t.l2(i))-find(corrOrder==t.l1(i));
+            RDM             = rsa_squareIPMfull(t.T(i,:));
+            rangeOff(i)     = range(rsa_vectorizeRDM(RDM'));
+        end
+        t.trueOrdDist   = trueOrdDist;
+        t.rangeOff      = rangeOff;
+        % how many variables to plot
+        if iscell(var)
+            nVar=size(var,2);
+        else
+            nVar=1;
+            var={var};
+        end
+        % plot forward and backward
+        figure
+        for i=1:nVar
+            subplot(nVar,2,(i-1)*2+1)
+            plt.scatter(abs(t.trueOrdDist),t.(var{i}),'subset',t.trueOrdDist<0);
+            xlabel('Number of steps removed between layers');
+            ylabel(var{i});
+            title('Forward');
+            subplot(nVar,2,(i-1)*2+2)
+            plt.scatter(abs(t.trueOrdDist),t.(var{i}),'subset',t.trueOrdDist>0);
+            title('Backward');
+            xlabel('N(steps between layers)');
+            ylabel(var{i});
+        end
+    otherwise
+        fprintf('This case does not exist!');
 end
 end
 

@@ -11,7 +11,6 @@ end
 
 % centering matrix H
 H = eye(numCond) - ones(numCond)/numCond;
-rsa_distcorr = zeros(1,size(H,1));
 for st = 1:numRDMs
     % reconstruct the square matrix
     R=rsa_squareRDM(rdms(st,:));
@@ -22,8 +21,8 @@ for st = 1:numRDMs
     offDiag_new{st} = (numCond/(numCond-1))*(R_cent-(R/(numCond)));
     R_mod     = offDiag_new{st};
     % 2) modify diagonal elements
-    meanRow     = mean(R{st},1);
-    meanAll     = mean(mean(R{st}));
+    meanRow     = mean(R,1);
+    meanAll     = mean(mean(R));
     diagNew{st} = (numCond/(numCond-1))*(meanRow-meanAll);
     % assign to new rdm - not necessary because not returning the new RDM
     %R_mod(eye(size(R_mod))==1) = diagNew{st};
@@ -31,6 +30,8 @@ end
 
 % determine all possible pairs of rdms
 indPair = indicatorMatrix('allpairs',1:numRDMs);
+rsa_distcorr = zeros(1,size(indPair,1));
+
 % make calculation for each pair
 for p = 1:size(indPair,1)
     ind=find(indPair(p,:));

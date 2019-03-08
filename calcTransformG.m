@@ -22,12 +22,12 @@ end
 [V1,L1]     = eig(G1);                     
 [l,i]       = sort(diag(L1),1,'descend'); % sort the eigenvalues
 V1          = V1(:,i);
-U1          = bsxfun(@times,V1,ssqrt(l'));
+U1          = bsxfun(@times,V1,real(sqrt(l')));
 % G2
 [V2,L2]     = eig(G2);                    
 [l,i]       = sort(diag(L2),1,'descend');          
 V2          = V2(:,i);
-U2          = bsxfun(@times,V2,ssqrt(l'));
+U2          = bsxfun(@times,V2,real(sqrt(l')));
 
 % transformation matrix T - A*A'
 A = pinv(U1)*U2;

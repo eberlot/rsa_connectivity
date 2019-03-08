@@ -82,10 +82,7 @@ switch what
             imagesc(T23)
             title('T2-3');
         end
-    case 'featureMix'
-        % predict a transformation based on features
-        % features can be data-driven (eigenvectors) or pre-specified
-        
+  
     case 'rank-def'
         % examine case when G1 rank deficient, G2 not
         U1=normrnd(0,1,[5,3]);
@@ -178,9 +175,71 @@ switch what
         varargout{1}=scaling;
         varargout{2}=predG2;
         varargout{3}=predG1;
-    case 'distanceMetric'
-        % determine a distance metric from predG to realG
-        
+    case 'off-diag'
+        %nVox = 100;
+        nCond = 5;
+        %U=normrnd(0,1,[nCond,nVox]);   
+        %G1=U*U'/nVox; 
+        G1=eye(nCond);
+        H1=indicatorMatrix('allpairs',(1:nCond));  
+        % optional - double center G
+        %G=G./trace(G);
+        % different toy examples of Ts
+        T{1} = eye(nCond);
+        T{2} = eye(nCond);
+        T{2}(1,1) = 5; % one dimension stretched
+        T{3} = T{2};
+        T{3}(2,2) = 4;
+        T{4} = T{3};
+        T{4}(1,2) = 3;
+        T{4}(2,1) = 3;
+
+        for i=1:length(T)
+            figure(1)
+            % create all predicted Gs
+            G_p=predictGfromTransform(G1,T{i});
+            D=rsa_squareRDM(diag(H1*G_p*H1')');
+            subplot(4,length(T),i)
+            imagesc(T{i}); colorbar;
+            title(sprintf('Transform-%d',i));
+            subplot(4,length(T),i+length(T))
+            imagesc(G_p); colorbar;
+            title(sprintf('Gpred-%d',i));
+            subplot(4,length(T),i+2*length(T))
+            imagesc(D); colorbar;
+            title(sprintf('RDMpred-%d',i));
+            
+            % lower dimension projection of G_p
+            [V2,L2]     = eig(G_p);
+            [l,ind]     = sort(diag(L2),1,'descend'); % sort the eigenvalues
+            V2          = V2(:,ind);
+            U2          = bsxfun(@times,V2,real(sqrt(l')));
+            subplot(4,length(T),i+3*length(T))
+            imagesc(U2); colorbar;
+            title(sprintf('U-%d',i));
+        end
+    case 'randomSamples'
+        % test if prediction can always be perfect
+        nSim = 10000; % number of simulations
+        nVox = 100;
+        nCond = 5;
+        H1=indicatorMatrix('allpairs',(1:nCond));  
+        TT=[];
+        for i=1:nSim
+            U1 = randn(nCond,3);
+            U2 = randn(nCond,nVox);
+            G1 = U1*U1'/nVox; 
+            G2 = U2*U2'/nVox;
+            RDM1 = rsa_squareRDM(diag(H1*G1*H1')');
+            RDM2 = rsa_squareRDM(diag(H1*G2*H1')');
+            T.corRDM = corr(rsa_vectorizeRDM(RDM1)',rsa_vectorizeRDM(RDM2)');
+            T.distCorr=rsa_calcDistCorrRDMs([rsa_vectorizeRDM(RDM1);rsa_vectorizeRDM(RDM2)]);
+            [T.T,T.predG,T.corT,T.corDist,T.cosDist]=calcTransformG(G1,G2);
+            TT=addstruct(TT,T);
+        end
+        figure
+        histplot(TT.corDist);
+        keyboard;
     case 'exampleFeature'
         % first make G1
         U1=normrnd(0,1,[5,6]);

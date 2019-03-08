@@ -22,7 +22,7 @@ vararginoptions(varargin,{'G2'});
 [V1,L1]     = eig(G1);                     
 [l,i]       = sort(diag(L1),1,'descend'); % sort the eigenvalues
 V1          = V1(:,i);
-U1          = bsxfun(@times,V1,ssqrt(l'));
+U1          = bsxfun(@times,V1,real(sqrt(l')));
 
 predG = U1*T*U1';
 
