@@ -218,6 +218,52 @@ switch what
             imagesc(U2); colorbar;
             title(sprintf('U-%d',i));
         end
+    case 'check_linearity'
+        nCond = 5;
+        nVox = 100;
+        scale = 1:1:100;
+        type = 'rand';
+        transType = 'diag'; % how to change T - 'diag', 'diag1'(one element on diagonal)
+        % 'off-diag' (one element off-diagonal), 'all' - scalar to all
+        % elements
+        vararginoptions(varargin,{'nCond','nVox','type','transType'});
+        
+        U=normrnd(0,1,[nCond,nVox]);
+        G1=U*U'/nVox;       
+        switch type
+            case 'identity' % identity transform
+                T = eye(nCond);
+            case 'rand' % random transformation
+                T = randn(nCond);
+        end
+        scalarG = zeros(length(scale),1);
+        scalarT = zeros(length(scale),1);
+        for s=scale
+            T1 = T;
+            switch transType
+                case 'diag'
+                    T1 = T(1,1)*eye(nCond)*scale(s);
+                case 'diag1'
+                    T1 = T;
+                    T1(1,1) = T(1,1)*scale(s);
+                case 'off-diag'
+                    T1 = T;
+                    T1(1,2) = T(1,2)*scale(s);
+                    T1(2,1) = T(2,1)*scale(s);
+                    T1(1,3) = T(1,2)*scale(s);
+                    T1(3,1) = T(2,1)*scale(s);
+                case 'all'
+                    T1 = T.*scale(s);
+            end
+            G2=predictGfromTransform(G1,T1);
+            scalarG(s)=pinv(G1(:))*G2(:);
+            scalarT(s)=pinv(T(:))*T1(:);
+        end
+        figure
+        scatterplot(scalarT,scalarG);
+        xlabel('change in transformation T');
+        ylabel('change in predicted G');
+               
     case 'randomSamples'
         % test if prediction can always be perfect
         nSim = 10000; % number of simulations
@@ -226,10 +272,12 @@ switch what
         H1=indicatorMatrix('allpairs',(1:nCond));  
         TT=[];
         for i=1:nSim
-            U1 = randn(nCond,3);
+            U1 = randn(nCond,nVox);
             U2 = randn(nCond,nVox);
             G1 = U1*U1'/nVox; 
             G2 = U2*U2'/nVox;
+            G1 = G1./trace(G1);
+            G2 = G2./trace(G2);
             RDM1 = rsa_squareRDM(diag(H1*G1*H1')');
             RDM2 = rsa_squareRDM(diag(H1*G2*H1')');
             T.corRDM = corr(rsa_vectorizeRDM(RDM1)',rsa_vectorizeRDM(RDM2)');
@@ -240,6 +288,101 @@ switch what
         figure
         histplot(TT.corDist);
         keyboard;
+    case 'randToCategory'
+        % calculate transformation from a random G to a categorical one
+        nCond = 5;
+        nVox = 100;
+        nReg = 2;
+        type = 'rand'; % determine what type G1 is
+        vararginoptions(varargin,{'nVox','nCond','type'});
+        
+        H = eye(nCond) - 1/nCond; 
+        G = cell(1,nReg);
+        D = G;
+        % G2 regardless of type:
+        %   - categorical representation formed by stimuli 3-5 
+        %   - stimuli 1-2 not represented
+        switch type
+            case 'example1' % here stimuli 3-5 are equidistant from each other and elements 1-2
+                U = randn(nCond,nVox);
+                G{1} = U*U'/nVox;
+                G{1} = G{1}./trace(G{1});
+                H1 = indicatorMatrix('allpairs',(1:nCond));
+                D{1} = rsa_squareRDM(diag(H1*G{1}*H1')');
+                D{2}(3:5,1:5)=1;
+                D{2}(1:5,3:5)=1;
+                D{2}(1:nCond+1:end)=0;
+                G{2} = -0.5*H*D{2}*H'; % calculate G from Ds
+                G{2} = G{2}./trace(G{2});
+            case 'example2' % within category more different
+                U = randn(nCond,nVox);
+                G{1} = U*U'/nVox;
+                G{1} = G{1}./trace(G{1});
+                H1 = indicatorMatrix('allpairs',(1:nCond));
+                D{1} = rsa_squareRDM(diag(H1*G{1}*H1')');
+                D{2}(3:5,3:5)=1;
+                D{2}(1:2,3:5)=2;
+                D{2}(3:5,1:2)=2;
+                D{2}(1:nCond+1:end)=0;
+                G{2} = -0.5*H*D{2}*H'; % calculate G from Ds
+                G{2} = G{2}./trace(G{2});
+            case 'example3' % across category more different
+                U = randn(nCond,nVox);
+                G{1} = U*U'/nVox;
+                G{1} = G{1}./trace(G{1});
+                H1 = indicatorMatrix('allpairs',(1:nCond));
+                D{1} = rsa_squareRDM(diag(H1*G{1}*H1')');
+                D{2}(3:5,3:5)=2;
+                D{2}(1:2,3:5)=1;
+                D{2}(3:5,1:2)=1;
+                D{2}(1:nCond+1:end)=0;
+                G{2} = -0.5*H*D{2}*H'; % calculate G from Ds
+                G{2} = G{2}./trace(G{2});
+            case 'example4' % only within-category distinction
+                U = randn(nCond,nVox);
+                G{1} = U*U'/nVox;
+                G{1} = G{1}./trace(G{1});
+                H1 = indicatorMatrix('allpairs',(1:nCond));
+                D{1} = rsa_squareRDM(diag(H1*G{1}*H1')');
+                D{2}(3:5,3:5)=1;
+                D{2}(1:nCond+1:end)=0;
+                G{2} = -0.5*H*D{2}*H'; % calculate G from Ds
+                G{2} = G{2}./trace(G{2});
+            case 'cat2cat' % different categories encoded in G1 vs. G2 (e.g. houses vs. faces)
+                D{1}=zeros(nCond); D{2}=D{1};
+                D{1}(1:2,1:5)=1;
+                D{1}(3:5,1:2)=1;
+                D{1}(1:nCond+1:end)=0;
+                D{2}(3:5,1:5)=1;
+                D{2}(1:5,3:5)=1;
+                D{2}(1:nCond+1:end)=0;
+                for i=1:nReg
+                    G{i} = -0.5*H*D{i}*H'; % calculate G from Ds
+                    G{i} = G{i}./trace(G{i});
+                    G{i} = pcm_makePD(G{i});
+                end
+        end
+
+        [T,predG,corT,~,~]=calcTransformG(G{1},G{2});  
+        figure
+        subplot(321)
+        imagesc(D{1}); colorbar;
+        title('RDM-1');
+        subplot(322)
+        imagesc(D{2}); colorbar;
+        title('RDM-2');
+        subplot(323)
+        imagesc(G{1}); colorbar;
+        title('G-1');
+        subplot(324)
+        imagesc(G{2}); colorbar;
+        title('G-2');
+        subplot(325)
+        imagesc(T); colorbar;
+        title(sprintf('Transformation T'));
+        subplot(326)
+        imagesc(predG); colorbar;
+        title(sprintf('Predicted G2: corr predG2-trueG2: %2.1f',corT));
     case 'exampleFeature'
         % first make G1
         U1=normrnd(0,1,[5,6]);
