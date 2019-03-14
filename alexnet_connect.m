@@ -74,7 +74,8 @@ switch what
         %% 2) determine which are the most likely borders
         [b1,b2]=alexnet_connect('mostLikely_borders',O_und);
         %% 3) calculate the directed flow
-        metrics={'corDist','scaleDist','diagDist','diagRange','dimension'};
+        %metrics={'corDist','scaleDist','diagDist','diagRange','dimension'};
+        metrics={'corDist','scaleFit','diagFit','diagRange','dimension'};
         O_dir = alexnet_connect('layer_order_directed',alpha{3},metrics,b1,b2);
         %% 4) calculate the order with the correct start
         O_uStart = alexnet_connect('layer_order_undir_correctStart',alpha(1:2),'dist');
@@ -466,18 +467,27 @@ switch what
         var         = varargin{2}; % which variable to consider
         nAlpha      = size(alpha,2); % number of cells in the cell array 
         OO=[];
-        for a=1:nAlpha
-            for i=unique(alpha{a}.distType)'
-                A=getrow(alpha{a},alpha{a}.distType==i);
-                O.order = alexnet_connect('estimate_order_undir',A,corrOrder(1),var);
-                % determine if matching orders to the correct one - accuracy
-                O.accu        = sum(O.order==corrOrder)/length(O.order);
-                O.distType    = i;
-                O.distName    = {A.distName{1}};
-                O.alphaType   = a;
-                % here determine the pairwise (neighbour) distances between layers
-                O.nDist = alexnet_connect('neighbour_distances',A,O.order,var,'undirected');
-                OO=addstruct(OO,O);
+        for type=1:3 % type 1: from node 1, type 2: neighbours
+            for a=1:nAlpha
+                for i=unique(alpha{a}.distType)'
+                    A=getrow(alpha{a},alpha{a}.distType==i);
+                    if type==1
+                        O.order = alexnet_connect('estimate_order_undir',A,corrOrder(1),var);
+                    elseif type==2
+                        O.order = alexnet_connect('estimate_order_neighbours_undir',A,corrOrder(1),var);
+                    else
+                        O.order = alexnet_connect('estimate_order_neighbours_undir',A,corrOrder(8),var);
+                    end
+                    % determine if matching orders to the correct one - accuracy
+                    O.accu        = sum(O.order==corrOrder)/length(O.order);
+                    O.distType    = i;
+                    O.distName    = {A.distName{1}};
+                    O.alphaType   = a;
+                    O.typeOrder   = type;
+                    % here determine the pairwise (neighbour) distances between layers
+                    O.nDist = alexnet_connect('neighbour_distances',A,O.order,var,'undirected');
+                    OO=addstruct(OO,O);
+                end
             end
         end
         varargout{1}=OO;
@@ -485,17 +495,25 @@ switch what
         % determine the order of metrics given the correct start
         A   = varargin{1};
         var = varargin{2}; % which variable(s) to consider
-        st = corrOrder(1);
         OO=[];
-        for m=1:length(var)
-            t = getrow(A,A.l1==st & A.l1~=A.l2);
-            [~,order]       = sort(t.(var{m}));
-            O.order         = [st order'];
-            O.distType      = m;
-            O.distName      = {var{m}};
-            O.alphaType     = 3;
-            O.nDist         = alexnet_connect('neighbour_distances',A,O.order,var{m},'directed');
-            OO = addstruct(OO,O);
+        for type=1:3 % type 1: from node 1, type 2: neighbours (from start), type 3: from end
+            for m=1:length(var)
+                if type==1
+                    t = getrow(A,A.l1==corrOrder(1) & A.l1~=A.l2);
+                    [~,order]       = sort(t.(var{m}));
+                    O.order         = [corrOrder(1) order'];
+                elseif type==2
+                    O.order = alexnet_connect('estimate_order_dir',A,corrOrder(1),var{m});
+                else
+                    O.order = alexnet_connect('estimate_order_dir',A,corrOrder(8),var{m});
+                end
+                O.distType      = m;
+                O.distName      = {var{m}};
+                O.alphaType     = 3;
+                O.typeOrder     = type;
+                O.nDist         = alexnet_connect('neighbour_distances',A,O.order,var{m},'directed');
+                OO = addstruct(OO,O);
+            end
         end
         varargout{1}=OO;
         case 'determine_borders'
@@ -525,6 +543,22 @@ switch what
                 [~,ord]=sort(t.(var));
                 inter = intersect(order,ord);
                 ord = ord(~ismember(ord,inter),:); % remove any previously chosen elements
+                order(i) = ord(1);
+            end
+            varargout{1}=order;
+        case 'estimate_order_neighbours_undir'
+            % estimate order from first / last layer - directed
+            A   = varargin{1};    % structure with distances
+            ind = varargin{2};    % which layer to start from
+            var = varargin{3};    % which variable to use as metric
+            RDM = rsa_squareRDM(A.(var)'); % matrix format
+            order = zeros(1,size(RDM,1));
+            order(1)=ind;
+
+            for i = 2:length(order)
+                [~,ord]=sort(RDM(order(i-1),:));
+                inter = intersect(order,ord);
+                ord = ord(~ismember(ord,inter)); % remove any previously chosen elements
                 order(i) = ord(1);
             end
             varargout{1}=order;
@@ -600,28 +634,32 @@ switch what
         T=varargin{1}; % data structure
         dataType={'univariate','multivariate'};
         distName=unique(T.distName);
-        for dt = 1:length(dataType)
-            figure
-            for d=1:length(distName)
-                t   = getrow(T,strcmp(T.distName,distName{d}) & T.alphaType==dt);
-                subplot(length(distName),1,d);
-                pos = [0 cumsum(t.nDist)];
-                scatterplot(pos',zeros(size(pos))','label',t.order,'markersize',8);
-                drawline(0,'dir','horz');
-                title(distName{d});
+        for to = 1:length(unique(T.typeOrder))
+            for dt = 1:length(dataType)
+                figure
+                for d=1:length(distName)
+                    t   = getrow(T,strcmp(T.distName,distName{d}) & T.alphaType==dt & T.typeOrder==to);
+                    subplot(length(distName),1,d);
+                    pos = [0 cumsum(t.nDist)];
+                    scatterplot(pos',zeros(size(pos))','label',t.order,'markersize',8);
+                    drawline(0,'dir','horz');
+                    title(sprintf('%s %s - type order-%d',dataType{dt},distName{d},to));
+                end
             end
         end
     case 'plot_order_dir_correctStart'
           T=varargin{1}; % data structure
           distName=unique(T.distName);
-          figure
-          for d=1:length(distName)
-              t   = getrow(T,strcmp(T.distName,distName{d}));
-              subplot(length(distName),1,d);
-              pos = [0 cumsum(t.nDist)];
-              scatterplot(pos',zeros(size(pos))','label',t.order,'markersize',8);
-              drawline(0,'dir','horz');
-              title(distName{d});
+          for to=1:length(unique(T.typeOrder))
+              figure
+              for d=1:length(distName)
+                  t   = getrow(T,strcmp(T.distName,distName{d}) & T.typeOrder==to);
+                  subplot(length(distName),1,d);
+                  pos = [0 cumsum(t.nDist)];
+                  scatterplot(pos',zeros(size(pos))','label',t.order,'markersize',8);
+                  drawline(0,'dir','horz');
+                  title(sprintf('%s - type order-%d',distName{d},to));
+              end
           end
     case 'plot_metrics_undir'
         D1=varargin{1}; % univariate
