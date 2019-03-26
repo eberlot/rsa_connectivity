@@ -7,7 +7,7 @@ function varargout = alexnet_connect(what,varargin)
 %
 % INPUT:
 %       - case: which case to run; if all: alexnet_connect('run_all');
-%
+%       - orderUse: random or correct (which order to use)
 % VARARGIN:
 %       - baseDir: where the alexNet mat file with activations is stored
 %       - figOn: whether intermediate results are plotted (0/1; default:1)
@@ -26,19 +26,39 @@ function varargout = alexnet_connect(what,varargin)
 %                           directed metrics (transformation between Gs)
 %       *note*: all outputs are saved in the baseDir
 %
+% usage: alexnet_connect('run_all','figOn',1);
+%
+baseDir = '/Volumes/MotorControl/data/rsa_connectivity/alexnet';
+load(fullfile(baseDir,'imageActivations_alexNet_4Eva'),'activations_rand','activations_correct');
+load(fullfile(baseDir,'imageAct_subsets'),'act_subsets'); 
+randOrder = [8 1 7 6 4 2 3 5]; % how the order was first determined - using activations_rand - double blind procedure
+correctOrder = 1:8; % correct order
+numLayer = 8;
+actUse = 'subsets'; % here change random or correct
+mColor={[84 13 100]/255,[238 66 102]/255,[14 173 105]/255,[59 206 172]/255,[255 210 63]/255,[78 164 220]/255,[176 0 35]/255,[170 170 170]/255};
+aType = {'correlation','cosine'};
 
-baseDir = '~/Documents/Data/rsa_connectivity/alexnet';
-load(fullfile(baseDir,'imageActivations_alexNet_4Eva'),'activations_rand');
-act = activations_rand;
-clear activations_rand;
-corrOrder = [8 1 7 6 4 2 3 5];
+if strcmp(actUse,'correct') % choose the ordering
+    order = correctOrder;
+    act = activations_correct;
+elseif strcmp(actUse,'random')
+    order = randOrder;
+    act = activations_rand;
+elseif strcmp(actUse,'subsets')
+    order = correctOrder;
+    act = act_subsets;
+else
+    error('wrong option!\n');
+end
+clear activations_rand; clear activations_correct;
 
 switch what
     case 'run_all'
-        figOn=1;
+        figOn = 1;
+        nameFile = sprintf('alexnet_%s',actUse);
         %% run the whole script 
-        vararginoptions(varargin,{'figOn'});
-        alexnet_connect('run_calcConnect','figOn',figOn);
+        vararginoptions(varargin,{'figOn','nameFile'});
+        alexnet_connect('run_calcConnect','figOn',figOn,'nameFile',nameFile);
         alexnet_connect('run_deriveOrder');
         if figOn
             alexnet_connect('plot_estimatedOrder');
@@ -49,7 +69,8 @@ switch what
         % second level: univariate / RDM connect, transformation of Gs
         % saves the outputs
         figOn = 1;
-        vararginoptions(varargin,{'figOn'});
+        nameFile = sprintf('alexnet_%s',actUse);
+        vararginoptions(varargin,{'figOn','nameFile'});
         %% 1) estimate first level metrics (G, RDM)
         [G,RDM,U] = alexnet_connect('estimate_firstLevel',figOn);
         %% 2) estimate second level metrics (between RDMs, Gs)
@@ -57,14 +78,14 @@ switch what
         alpha{1} = alexnet_connect('estimate_distance',U,figOn,'univariate');
         % 2b) calculate distance between RDMs (cosine, correlation)
         alpha{2} = alexnet_connect('estimate_distance',RDM,figOn,'RDM'); 
-        % partialcorri(RDM(8,:)',RDM([1:7],:)','Rows','complete');
         % 2c) calculate transformation matrices T between Gs
         alpha{3} = alexnet_connect('transformG',G,figOn);
         varargout{1}=alpha;
         %% save the variables
-        save(fullfile(baseDir,'alexnet_G'),'G');
-        save(fullfile(baseDir,'alexnet_RDM'),'RDM');
-        save(fullfile(baseDir,'alexnet_alpha'),'alpha');
+        save(fullfile(baseDir,sprintf('%s_G',nameFile)),'G');
+        save(fullfile(baseDir,sprintf('%s_univariate',nameFile)),'U');
+        save(fullfile(baseDir,sprintf('%s_RDM',nameFile)),'RDM');
+        save(fullfile(baseDir,sprintf('%s_alpha',nameFile)),'alpha');
     case 'run_deriveOrder'
         % calculate the order of layers based on metrics
         a=load(fullfile(baseDir,'alexnet_alpha'),'alpha'); 
@@ -75,7 +96,7 @@ switch what
         [b1,b2]=alexnet_connect('mostLikely_borders',O_und);
         %% 3) calculate the directed flow
         %metrics={'corDist','scaleDist','diagDist','diagRange','dimension'};
-        metrics={'corDist','scaleFit','diagFit','diagRange','dimension'};
+        metrics={'corDist','scaleFit','diagFit','diagRange','eigStd','dimension'};
         O_dir = alexnet_connect('layer_order_directed',alpha{3},metrics,b1,b2);
         %% 4) calculate the order with the correct start
         O_uStart = alexnet_connect('layer_order_undir_correctStart',alpha(1:2),'dist');
@@ -86,7 +107,34 @@ switch what
         save(fullfile(baseDir,'order_undir_corStart'),'-struct','O_uStart');
         save(fullfile(baseDir,'order_dir_corStart'),'-struct','O_dStart');
         varargout{1}={O_und O_dir O_uStart O_dStart};
-    case 'plot_estimatedOrder'
+        case 'estimate_accuracy'
+            % estimate the accuracy of the determined order
+            orderName = {'undir_corStart','dir_corStart'};
+            for i = 1:length(orderName)
+                T = load(fullfile(sprintf('order_%s',orderName{i})));
+                order = T.order;
+                order(T.typeOrder==3,:) = fliplr(T.order(T.typeOrder==3,:));
+                T.corrElem    = zeros(size(T.typeOrder));
+                T.nSteps      = zeros(size(T.typeOrder));
+                for j=1:size(order,1)
+                    if T.typeOrder(j)==3 % flip and start from the end
+                        tmpOrder = fliplr(order);
+                    else
+                        tmpOrder = order;
+                    end
+                    T.corrElem(j) = (sum(order(j,2:end)==order(2:end)))/(size(order,2)-1);
+                    % determine how many steps away
+                    nstep=[];
+                    for k=2:length(order)
+                        pos=find(order(j,:)==tmpOrder(k));
+                        nstep = [nstep; pos-k];
+                    end
+                    T.nSteps(j) = mean(abs(nstep));
+                end
+                save(fullfile(baseDir,sprintf('order_%s',orderName{i})),'-struct','T');
+                % K=tapply(T,{'distName','alphaType'},{'corrElem','mean'});
+            end
+        case 'plot_estimatedOrder'
         %% plots the estimated order of layers
         U = load(fullfile(baseDir,'order_undirected'));
         alexnet_connect('plot_order_undirected',U);
@@ -96,6 +144,25 @@ switch what
         alexnet_connect('plot_order_undir_correctStart',US);
         DS = load(fullfile(baseDir,'order_dir_corStart'));
         alexnet_connect('plot_order_dir_correctStart',DS);
+    case 'run_cluster'
+        % derive relationship between clusters (each layer split into 4 regions)
+        a = load(fullfile(baseDir,'alexnet_subsets_alpha'),'alpha'); 
+        C = a.alpha; % cluster alpha values
+        %% 1) estimate clusters based on distance metrics - undirected
+        C_und = alexnet_connect('cluster_undirected',C(1:2),'dist');
+        %% 2) directed metrics
+        metrics={'corDist','scaleFit','diagFit','diagRange','eigStd','dimension'};
+        C_dir = alexnet_connect('cluster_directed',C{3},metrics);
+        save(fullfile(baseDir,'cluster_undirected'),'-struct','C_und');
+        save(fullfile(baseDir,'cluster_directed'),'-struct','C_dir');
+        varargout{1}={C_und C_dir};
+        case 'plot_estimatedClusters'
+            %% here plot the estimated clusters (into layers, their relationship)
+            U = load(fullfile(baseDir,'cluster_undirected'));
+            alexnet_connect('plot_cluster_undirected',U);
+            D = load(fullfile(baseDir,'cluster_directed'));
+            alexnet_connect('plot_cluster_directed',D);
+            
     case 'plot_metricRelations'
         T=load(fullfile(baseDir,'alexnet_alpha'));
         D1=T.alpha{1};
@@ -104,29 +171,32 @@ switch what
         alexnet_connect('plot_metrics_undir',D1,D2);
         alexnet_connect('plot_metrics_dir',D3); % add the new ones - diag-offdiag, range vs. scalar
         keyboard;
+        %%
     
     case 'estimate_firstLevel'
         %% estimate metrics on first level (i.e. *per* layer)
         % - G matrices per layer
         % - RDM matrices per layer
         % optional: plot RDMs per layer (plots by default)
-        % usage: alexnet_connect('estimate_firstLevel',,0);
+        % calculate everything per layer or per cluster
+        % usage: alexnet_connect('estimate_firstLevel',0,'clust');
         fig=varargin{1};
         % 1) estimate G matrices for each layer
-        G = alexnet_connect('estimateG'); 
+        G = alexnet_connect('estimateG',act); 
         % 2) estimate RDMs
         RDM = alexnet_connect('estimateRDM',G);
         if fig
             alexnet_connect('plotRDM',RDM);
         end
         % 3) estimate mean patterns - univariate
-        U = alexnet_connect('estimateUnivariate');
+        U = alexnet_connect('estimateUnivariate',act);
         varargout{1}=G;
         varargout{2}=RDM;
         varargout{3}=U;
         fprintf('Done estimating first level metrics: uni, RDM, G.\n');
-        case 'estimateG'
+        case 'estimateG'  
             % estimates G from input (for each layer)
+            act = varargin{1};
             nLayer = size(act,1);
             G = cell(nLayer,1);
             for i=1:nLayer
@@ -153,18 +223,21 @@ switch what
             nRDM = size(RDM,1);
             figure
             for i=1:nRDM
-                subplot(2,4,i);
+                subplot(4,nRDM/4,i);
                 imagesc(rsa_squareRDM(RDM(i,:)));
                 colormap('hot');
                 title(sprintf('RDM-layer%d',i));
             end
         case 'estimateUnivariate'
             % estimate a univariate metric - mean response per condition
+            act    = varargin{1};
             nLayer = size(act,1);
             nStim  = size(act{1},1);
             U = zeros(nLayer,nStim);
             for i=1:nLayer
-                U(i,:)=mean(act{i},2)';
+                t=bsxfun(@minus,act{i},mean(act{i},1));  % first here remove the mean activation
+                U(i,:)=mean(t,2)'; 
+                %U(i,:)=mean(act{i},2)';
             end
             varargout{1}=U;
         
@@ -286,6 +359,7 @@ switch what
             [T.diagFit,T.diagDist]              = alexnet_connect('diagT',T,G); 
             T.diagRange                         = alexnet_connect('diagRange',T);
             T.rank                              = alexnet_connect('rank',T);
+            [T.eig,T.eigStd]                    = alexnet_connect('eigenvalues',T);
             [T.dimFit,T.dimDist,T.dimension]    = alexnet_connect('dimensionT',T,G,figOn);
             varargout{1} = T; % output - added fields characterize T
         case 'scaleT'
@@ -337,6 +411,20 @@ switch what
                 rankT(i)=rank(rsa_squareIPMfull(T.T(i,:)));
             end
             varargout{1}=rankT;
+        case 'eigenvalues'
+            % determine the range of eigenvalues of transformation matrix T
+            % returns the eigenvalues and their variance
+            T=varargin{1};
+            nPair   = size(T.T,1);
+            eigT    = zeros(nPair,size(rsa_squareIPMfull(T.T(1,:)),1));
+            eigStd  = zeros(nPair,1);
+            for i=1:nPair
+                Tr = rsa_squareIPMfull(T.T(i,:));
+                eigT(i,:)   = eig(Tr)';
+                eigStd(i)   = std(eigT(i,:));
+            end
+            varargout{1}=eigT;
+            varargout{2}=eigStd;
         case 'dimensionT'
             % dimensionality of T, and fits of predG with different dim num
             T       = varargin{1};
@@ -467,19 +555,19 @@ switch what
         var         = varargin{2}; % which variable to consider
         nAlpha      = size(alpha,2); % number of cells in the cell array 
         OO=[];
-        for type=1:3 % type 1: from node 1, type 2: neighbours
+        for type=1:3 % type 1: from node 1, type 2: neighbours, type 3: from end
             for a=1:nAlpha
                 for i=unique(alpha{a}.distType)'
                     A=getrow(alpha{a},alpha{a}.distType==i);
                     if type==1
-                        O.order = alexnet_connect('estimate_order_undir',A,corrOrder(1),var);
+                        O.order = alexnet_connect('estimate_order_undir',A,order(1),var);
                     elseif type==2
-                        O.order = alexnet_connect('estimate_order_neighbours_undir',A,corrOrder(1),var);
+                        O.order = alexnet_connect('estimate_order_neighbours_undir',A,order(1),var);
                     else
-                        O.order = alexnet_connect('estimate_order_neighbours_undir',A,corrOrder(8),var);
+                        O.order = alexnet_connect('estimate_order_neighbours_undir',A,order(8),var);
                     end
                     % determine if matching orders to the correct one - accuracy
-                    O.accu        = sum(O.order==corrOrder)/length(O.order);
+                    O.accu        = sum(O.order==order)/length(O.order);
                     O.distType    = i;
                     O.distName    = {A.distName{1}};
                     O.alphaType   = a;
@@ -499,13 +587,13 @@ switch what
         for type=1:3 % type 1: from node 1, type 2: neighbours (from start), type 3: from end
             for m=1:length(var)
                 if type==1
-                    t = getrow(A,A.l1==corrOrder(1) & A.l1~=A.l2);
+                    t = getrow(A,A.l1==order(1) & A.l1~=A.l2);
                     [~,order]       = sort(t.(var{m}));
-                    O.order         = [corrOrder(1) order'];
+                    O.order         = [order(1) order'];
                 elseif type==2
-                    O.order = alexnet_connect('estimate_order_dir',A,corrOrder(1),var{m});
+                    O.order = alexnet_connect('estimate_order_dir',A,order(1),var{m});
                 else
-                    O.order = alexnet_connect('estimate_order_dir',A,corrOrder(8),var{m});
+                    O.order = alexnet_connect('estimate_order_dir',A,order(8),var{m});
                 end
                 O.distType      = m;
                 O.distName      = {var{m}};
@@ -589,7 +677,7 @@ switch what
                 end
             end
             varargout{1}=nDist;
-
+ 
     case 'plot_order_undirected'
         % plot the order for undirected graph
         T=varargin{1}; % data structure
@@ -684,7 +772,7 @@ switch what
     case 'plot_metrics_dir'
         D=varargin{1}; % directed metrics
         keyboard;
-        metrics={'corDist','scaleDist','diagRange','dimension'};
+        metrics={'corDist','scaleDist','diagRange','eigStd','dimension'};
         ind=indicatorMatrix('allpairs',1:length(metrics));
         figure
         for i=1:size(ind,1)
@@ -698,9 +786,9 @@ switch what
         G=load('alexnet_G');
         G=G.G;
         t=a.alpha{3};
-        for i=1:length(corrOrder)-1 % inspect the neighbours
-            T_for   = rsa_squareIPMfull(t.T(t.l1==corrOrder(i)&t.l2==corrOrder(i+1),:)); % forward transformation
-            T_back  = rsa_squareIPMfull(t.T(t.l1==corrOrder(i+1)&t.l2==corrOrder(i),:)); % backward transformation
+        for i=1:length(order)-1 % inspect the neighbours
+            T_for   = rsa_squareIPMfull(t.T(t.l1==order(i)&t.l2==order(i+1),:)); % forward transformation
+            T_back  = rsa_squareIPMfull(t.T(t.l1==order(i+1)&t.l2==order(i),:)); % backward transformation
             [uf,sf,vf] = svd(T_for);
             [ub,sb,vb] = svd(T_back);
             
@@ -708,30 +796,30 @@ switch what
             T_rback     = ub(:,1)*sb(1,1)*vb(:,1)';
             figure
             subplot(4,5,1)
-            imagesc(G{corrOrder(i)});
-            title(sprintf('G%d',corrOrder(i)));
+            imagesc(G{order(i)});
+            title(sprintf('G%d',order(i)));
             subplot(4,5,2)
-            imagesc(G{corrOrder(i+1)});
-            title(sprintf('G%d',corrOrder(i+1)));
+            imagesc(G{order(i+1)});
+            title(sprintf('G%d',order(i+1)));
             subplot(4,5,3)
-            imagesc(predictGfromTransform(G{corrOrder(i)},T_rfor));
-            title(sprintf('predicted G%d',corrOrder(i+1)));
+            imagesc(predictGfromTransform(G{order(i)},T_rfor));
+            title(sprintf('predicted G%d',order(i+1)));
             subplot(4,5,4)
-            imagesc(predictGfromTransform(G{corrOrder(i)},T_rback));
-            title(sprintf('predicted G%d',corrOrder(i)));
+            imagesc(predictGfromTransform(G{order(i)},T_rback));
+            title(sprintf('predicted G%d',order(i)));
             
             subplot(4,5,6)
             imagesc(T_for);
-            title(sprintf('forward full T layers %d-%d',corrOrder(i),corrOrder(i+1)));
+            title(sprintf('forward full T layers %d-%d',order(i),order(i+1)));
             subplot(4,5,7)
             imagesc(T_back);
-            title(sprintf('back full T layers %d-%d',corrOrder(i+1),corrOrder(i)));
+            title(sprintf('back full T layers %d-%d',order(i+1),order(i)));
             subplot(4,5,8)
             imagesc(T_rfor);
-            title(sprintf('forward reduced T layers %d-%d',corrOrder(i),corrOrder(i+1)));
+            title(sprintf('forward reduced T layers %d-%d',order(i),order(i+1)));
             subplot(4,5,9)
             imagesc(T_rback);
-            title(sprintf('back reduced T layers %d-%d',corrOrder(i+1),corrOrder(i)));
+            title(sprintf('back reduced T layers %d-%d',order(i+1),order(i)));
             subplot(4,5,11)
             hist(diag(T_for),50);
             title(sprintf('range diagonal: %2.1f',range(diag(T_for))));
@@ -758,9 +846,9 @@ switch what
             title(sprintf('range off-diagonal: %2.1f',range(rsa_vectorizeRDM(T_rback))));
             % here plot the added dimensions
             subplot(4,5,[10,15]);
-            plot(t.dimFit(t.l1==corrOrder(i)&t.l2==corrOrder(i+1),:),'linewidth',2);
+            plot(t.dimFit(t.l1==order(i)&t.l2==order(i+1),:),'linewidth',2);
             hold on;
-            plot(t.dimFit(t.l1==corrOrder(i+1)&t.l2==corrOrder(i),:),'--','linewidth',2);
+            plot(t.dimFit(t.l1==order(i+1)&t.l2==order(i),:),'--','linewidth',2);
             legend({'forward','backward'},'Location','SouthEast');
         end
     case 'plot_metrics_trueOrder'
@@ -773,7 +861,7 @@ switch what
         trueOrdDist = zeros(size(t.l1));
         rangeOff = zeros(size(t.l1));
         for i=1:size(t.l1,1)
-            trueOrdDist(i)  = find(corrOrder==t.l2(i))-find(corrOrder==t.l1(i));
+            trueOrdDist(i)  = find(order==t.l2(i))-find(order==t.l1(i));
             RDM             = rsa_squareIPMfull(t.T(i,:));
             rangeOff(i)     = range(rsa_vectorizeRDM(RDM'));
         end
@@ -800,6 +888,272 @@ switch what
             xlabel('N(steps between layers)');
             ylabel(var{i});
         end
+     
+    case 'cluster_undirected'           % DEPRECIATED
+        %% estimate the clustering for a given metric (undirected)
+        C       = varargin{1};
+        var     = varargin{2}; % which variable to consider
+        nAlpha  = size(C,2); % number of cells in the cell array 
+        OO=[]; 
+        for a=1:nAlpha
+            for i=unique(C{a}.distType)'
+                A=getrow(C{a},C{a}.distType==i);
+                % create an adjacency matrix
+                t = rsa_squareRDM(A.dist');
+                % create a matrix of similarity 
+                t2 = t./max(max(t));
+                W = 1-t2;
+                [cl,centr] = kmeans(W,8);
+                dC = diff(cl);
+                %l=linkage(centr,'ward','euclidean');
+                %dendrogram(l);
+                % determine accuracy
+                id = (1:32)';
+                idx=rem(id,4)>0;
+                O.error = length(find(dC(idx(1:(end-1)))))/length(dC); % percent errors in cluster assignment
+                O.cluster = cl';
+                O.centr   = {centr};
+                % save other info
+                O.distType    = i;
+                O.distName    = {var};
+                O.alphaType   = a;
+                OO=addstruct(OO,O);
+            end
+        end
+        varargout{1}=OO;
+    case 'cluster_directed'             % DEPRECIATED
+        %% estimate the clustering for a given metric (directed)
+        C       = varargin{1};
+        var     = varargin{2}; % which variable to consider
+        OO=[];
+        for i=1:length(var)
+            % create an adjacency matrix
+            t = rsa_squareIPMfull(C.(var{i})');
+            % create a matrix of similarity - undirected now
+            tu = t+t'; % two options: t+t' or t'*t+t*t'
+            t2 = t./max(max(tu));
+            W = 1-t2;
+            [cl,centr] = kmeans(W,8);
+            dC = diff(cl);
+            %l=linkage(centr,'ward','euclidean');
+            %dendrogram(l);
+            % determine accuracy
+            id = (1:32)';
+            idx=rem(id,4)>0;
+            O.error = length(find(dC(idx(1:(end-1)))))/length(dC); % percent errors in cluster assignment
+            O.cluster = cl';
+            O.centr   = {centr};
+            % save other info
+            O.distType    = i;
+            O.distName    = {var};
+            OO=addstruct(OO,O);
+        end
+        varargout{1}=OO;
+   
+    case 'plot_cluster_undirected'      % DEPRECIATED
+        % plot the order for undirected graph
+        T=varargin{1}; % data structure
+        distType={'univariate','multivariate'};
+        alphaType={'correlation','cosine'};
+        for d=1:length(distType)
+            figure
+            for m=1:length(alphaType)
+                t   = getrow(T,T.distType==d & T.alphaType==m);
+                l   = linkage(t.centr{:},'ward','euclidean');
+                figure
+                dendrogram(l);
+                hold on;
+                ylim=get(gca,'ylim');
+                plot(1:8,ylim(1),'o','markersize',10);
+                title(sprintf('%s %s - error %2.1f',distType{d},alphaType{m},t.error));
+            end
+        end
+    case 'plot_cluster_directed'        % DEPRECIATED
+        % plot the order for undirected graph
+        T=varargin{1}; % data structure
+        distType={'corDist','scaleFit','diagFit','diagRange','dimension'};
+        for d=1:length(distType)
+            figure
+            t   = getrow(T,T.distType==d);
+            l   = linkage(t.centr{:},'ward','euclidean');
+            figure
+            dendrogram(l);
+            hold on;
+            ylim=get(gca,'ylim');
+            plot(1:8,ylim(1),'o','markersize',10);
+            title(sprintf('%s - error %2.1f',distType{d},t.error));
+        end
+     
+    case 'estimate_topology_alpha'
+        % here estimate topology for different alpha metrics - univariate /
+        % multivariate
+        % some parameters
+        n_dim   = 2; % number of dimensions to consider
+        n_neigh = 2; % number of neighbours to consider
+        dataType = {'univariate','multivariate'};
+        metricType = {'correlation','cosine'};
+        a = load(fullfile(baseDir,sprintf('alexnet_%s_alpha',actUse)),'alpha');
+        A = a.alpha;
+        figure; indx=1;
+        for d = 1:2 % univariate or multivariate
+            for m = 1:2 % cosine or correlation
+                % test on multi-cosine distance
+                D = rsa_squareRDM(A{d}.dist(A{d}.distType==m)');
+                % submit to topology function
+                [mX,mp] = topology_estimate(D,n_dim,n_neigh,'dataType','raw');
+                subplot(2,2,indx)
+                hold on;
+                W = full(mp.D);
+                [r,c,val] = find(W);
+                val = val./max(val); % renormalize
+                for i=1:length(r)
+                    plot([mX(r(i),1),mX(c(i),1)],[mX(r(i),2),mX(c(i),2)],'LineWidth',(1/val(i)),'Color',repmat(val(i),3,1)./(max(val)+0.1));
+                end
+                scatterplot(mX(:,1),mX(:,2),'label',(1:8),'split',(1:8)','markercolor',mColor,'markertype','.','markersize',40);
+                title(sprintf('%s - %s',dataType{d},metricType{m}));
+                indx=indx+1;
+                
+            end
+        end
+    case 'estimate_topology_directed'
+        % estimate topology for directional metrics
+        n_dim   = 2; % number of dimensions to consider
+        n_neigh = 2; % number of neighbours to consider
+        a = load(fullfile(baseDir,sprintf('alexnet_%s_alpha',actUse)),'alpha');
+        A = a.alpha{3};
+        metrics={'scaleDist','diagRange','eigStd','dimension'};
+        for m = 1:length(metrics)
+            t = rsa_squareIPMfull(A.(metrics{m})'); % t+t' to make it undirected
+            [mX,mp] = topology_estimate(t+t',n_dim,n_neigh,'dataType','raw');
+            subplot(1,length(metrics),m)
+            hold on;
+                W = full(mp.D);
+                [r,c,val] = find(W);
+                for i=1:length(r)
+                    plot([mX(r(i),1),mX(c(i),1)],[mX(r(i),2),mX(c(i),2)],'LineWidth',(1/val(i)),'Color',repmat(val(i),3,1)./(max(val)+0.05));
+                end
+            scatterplot(mX(:,1),mX(:,2),'label',(1:8),'split',(1:8)','markercolor',mColor,'markertype','.','markersize',40);
+            title(metrics{m});
+        end
+    case 'estimate_topology_firstLevel'
+        % estimate topology using first level metrics instead of distances
+         n_dim   = 2; % number of dimensions to consider
+         n_neigh = 2; % number of neighbours to consider
+         load(fullfile(baseDir,sprintf('alexnet_%s_RDM',actUse))); 
+         load(fullfile(baseDir,sprintf('alexnet_%s_univariate',actUse)));
+         load(fullfile(baseDir,sprintf('alexnet_%s_G',actUse)));
+         % reshape the G
+         Gn = zeros(numLayer,size(rsa_vectorizeIPMfull(G{1})',1));
+         for i=1:numLayer
+             Gn(i,:)=rsa_vectorizeIPMfull(G{i})';
+         end
+         [mR,~] = topology_estimate(RDM,n_dim,n_neigh,'dataType','raw');
+         [mU,~] = topology_estimate(U,n_dim,n_neigh,'dataType','raw');
+         [mG,~] = topology_estimate(Gn,n_dim,n_neigh,'dataType','raw');
+         figure
+         subplot(131)
+         scatterplot(mU(:,1),mU(:,2),'label',1:8,'split',(1:8)','markercolor',mColor,'markertype','.','markersize',25);
+         title('estimate from univariate activation');
+         subplot(132)
+         scatterplot(mR(:,1),mR(:,2),'label',1:8,'split',(1:8)','markercolor',mColor,'markertype','.','markersize',25);
+         title('estimate from RDM');
+         subplot(133)
+         scatterplot(mG(:,1),mG(:,2),'label',1:8,'split',(1:8)','markercolor',mColor,'markertype','.','markersize',25);
+         title('estimate from G');
+    case 'estimate_topology_allUnits_subset'
+        load(fullfile(baseDir,'imageAct_subsets'));
+        numVox = 100;
+        nNeigh = 20;
+        nDim = 3;
+        U = []; 
+        for i=1:numLayer
+            t = (act{i}(:,sample_wor(1:size(act{i},2),1,numVox)))';
+            U = [U; t]; % univariate
+        end
+        D = squareform(pdist(U,'cosine'));
+        ind = kron(1:numLayer,ones(1,numVox))';
+        [m,mp] = topology_estimate(D,nDim,nNeigh,'dataType','raw');
+        figure
+        subplot(221)
+        imagesc(mp.D); title('sorted adjacency matrix');
+        subplot(222)
+        imagesc(mp.DD); title('shortest path matrix');
+        subplot(2,2,3:4);
+        legLab = {'layer1','layer2','layer3','layer4','layer5','layer6','layer7','layer8'};
+        scatterplot3(m(:,1),m(:,2),m(:,3),'split',ind,'markercolor',mColor,'markertype',{'.'},'markerfill',[1 1 1],'markersize',20,'leg',legLab);
+        title(sprintf('estimated topology in %1.0fD with %2.0f neighbours per point',nDim,nNeigh)); axis equal; axis off;
+    case 'allUnits_activation'
+        % here determine the activation profile, similarity matrix of
+        % all units (well, subset - 500 per layer)
+        % univariate only (there is no multivariate per unit)
+        load(fullfile(baseDir,'imageAct_subsets'));
+        % reshape
+        U = [];
+        for i=1:numLayer
+            U = [U; act{i}'];
+        end
+        for i=1:2
+            if strcmp(aType{i},'correlation')
+                    % additional step for correlation - first remove the mean
+                    U  = bsxfun(@minus,U,mean(U,2));
+            end
+            U  = normalizeX(U);
+            tmpR  = U*U'; % correlation across RDMs
+            dist{i} = 1-tmpR;
+        end
+        save(fullfile(baseDir,'alexnet_allUnits_uniDist'),'dist');
+    case 'allUnits_cluster'
+        % determine clustering across units
+        load(fullfile(baseDir,'alexnet_allUnits_uniDist'));
+        
+        thres = [0,500:500:4000];
+        
+        figure
+        for a=1:size(dist,2)
+            % create an adjacency matrix
+            t = dist{a};
+            % create a matrix of similarity
+            t2 = t./max(max(t));
+            W = 1-t2;
+            subplot(2,2,a)
+            imagesc(W);
+%             hold on;
+%             for i=1:numLayer
+%                 drawline(thres(i)+1:thres(i+1),'dir','vert','lim',[thres(i) thres(i)+1],'color',[1 1 1]);
+%                 drawline(thres(i)+1:thres(i+1),'dir','vert','lim',[thres(i+1) thres(i+1)+1],'color',[1 1 1]);
+%                 drawline(thres(i)+1:thres(i+1),'dir','horz','lim',[thres(i) thres(i)+1],'color',[1 1 1]);
+%                 drawline(thres(i)+1:thres(i+1),'dir','horz','lim',[thres(i+1) thres(i+1)+1],'color',[1 1 1])
+%                 drawline(thres(i)+1:thres(i+1),'dir','horz','lim',[thres(i) thres(i)+1],'color',[1 1 1])
+%             end
+            colormap('hot');
+            title(sprintf('%s univariate similarity matrix',aType{a}));
+            [cl,~] = kmeans(W,8);
+            subplot(2,2,a+2)
+            imagesc([cl, kron(1:numLayer,ones(1,500))']); 
+            title('estimated clusters (left) true layers (right)');
+        end
+        
+    case 'HOUSEKEEPING:correctOrder'
+        % reorder activation units
+        activations_correct = cell(8,1);
+        for i=1:size(actCorrect,1)
+            activations_correct{i} = act{order(i)};
+        end
+        % save
+        save(fullfile(baseDir,'imageActivations_alexNet_4Eva'),'activations_rand','activations_correct');
+    case 'HOUSEKEEPING:subsets' 
+        % split the original alexnet activations into smaller subsets
+        % (ROIs) of 500 voxels each
+        % to estimate if clustering will recover the correct layers
+        % save as new structure
+        nVox = 500; % 500 voxels in each ROI
+        act_subsets = cell(numLayer,1);
+        for i=1:numLayer
+            act_subsets{i} = act{i}(:,sample_wor(1:size(act{i},2),1,nVox));
+        end
+        save(fullfile(baseDir,'imageAct_subsets'),'act_subsets');
+    
+        
     otherwise
         fprintf('This case does not exist!');
 end
