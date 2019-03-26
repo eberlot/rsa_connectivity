@@ -1,6 +1,6 @@
-function [mappedY, mapping] = topology_estimate(Y,n_dim,k,varargin)
-%function [mappedY, mapping] = topology_estimate(D,n_dim,k,varargin);
-% runs isomap algorithm to estimate tge topology on the given data
+function [mappedY, mapping] = topology_estimate(Y,n_dim,k)
+% function [mappedY, mapping] = topology_estimate(D,n_dim,k,varargin);
+% runs the isomap algorithm to estimate the topology on the given data
 %
 % INPUT: 
 %           - D: data (size n x p; if data raw: n - number of regions, p - number of
@@ -14,15 +14,16 @@ function [mappedY, mapping] = topology_estimate(Y,n_dim,k,varargin)
 %               topology
 %           - mapping: structure providing additional info on the mapping
 %
-% example usage: [X,mp] = topology_estimate(data,3,10,'dataType','raw')
+% example usage: [X,mp] = topology_estimate(data,3,10)
 %
-%
+%--------------------------------------------------------------------------
     n = size(Y,1);
     D = zeros(n,k);
     ni = zeros(n,k);
 
     % Construct neighborhood graph using nearest-neighbour algorithm
     fprintf('Constructing the neighbourhood graph...');
+    
     % Compute distances (neighbours)
     sum_Y = sum(Y.^2,2);
     indx=1:n;
@@ -76,10 +77,9 @@ function [mappedY, mapping] = topology_estimate(Y,n_dim,k,varargin)
     val = val(1:n_dim);
     mappedY = real(bsxfun(@times, vec, sqrt(val)'));
 
-    % Store data for out-of-sample extension
+    % Store data
     mapping.conn_comp = conn_comp;
     mapping.k = k;
-    % mapping.X = X(conn_comp,:);
     mapping.vec = vec;
     mapping.val = val;
     mapping.no_dims = n_dim;

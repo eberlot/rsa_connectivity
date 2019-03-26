@@ -34,10 +34,10 @@ load(fullfile(baseDir,'imageAct_subsets'),'act_subsets');
 randOrder = [8 1 7 6 4 2 3 5]; % how the order was first determined - using activations_rand - double blind procedure
 correctOrder = 1:8; % correct order
 numLayer = 8;
-actUse = 'subsets'; % here change random or correct
-mColor={[84 13 100]/255,[238 66 102]/255,[14 173 105]/255,[59 206 172]/255,[255 210 63]/255,[78 164 220]/255,[176 0 35]/255,[170 170 170]/255};
 aType = {'correlation','cosine'};
+mColor={[84 13 100]/255,[238 66 102]/255,[14 173 105]/255,[59 206 172]/255,[255 210 63]/255,[78 164 220]/255,[176 0 35]/255,[170 170 170]/255};
 
+actUse = 'subsets'; % here change random or correct
 if strcmp(actUse,'correct') % choose the ordering
     order = correctOrder;
     act = activations_correct;
@@ -247,7 +247,6 @@ switch what
         fig = varargin{2};
         dataType = varargin{3}; % univariate or multivariate connectivity
         alpha=[];
-        aType = {'correlation','cosine'};
         for i=1:2
             D = alexnet_connect('calcDist',RDM,aType{i});
             D.distType = ones(size(D.l1))*i;
@@ -539,7 +538,7 @@ switch what
                     O.order = alexnet_connect('estimate_order_dir',alpha,B2,var{m});
                 end
                 O.distType    = m;
-                O.distName    = {var{m}};
+                O.distName    = var(m);
                 O.alphaType   = 3;
                 O.borderType  = b;
                 % here determine the pairwise (neighbour) distances between layers
@@ -569,7 +568,7 @@ switch what
                     % determine if matching orders to the correct one - accuracy
                     O.accu        = sum(O.order==order)/length(O.order);
                     O.distType    = i;
-                    O.distName    = {A.distName{1}};
+                    O.distName    = A.distName(1);
                     O.alphaType   = a;
                     O.typeOrder   = type;
                     % here determine the pairwise (neighbour) distances between layers
@@ -596,7 +595,7 @@ switch what
                     O.order = alexnet_connect('estimate_order_dir',A,order(8),var{m});
                 end
                 O.distType      = m;
-                O.distName      = {var{m}};
+                O.distName      = var(m);
                 O.alphaType     = 3;
                 O.typeOrder     = type;
                 O.nDist         = alexnet_connect('neighbour_distances',A,O.order,var{m},'directed');
@@ -682,22 +681,21 @@ switch what
         % plot the order for undirected graph
         T=varargin{1}; % data structure
         distType={'univariate','multivariate'};
-        alphaType={'correlation','cosine'};
         for d=1:length(distType)
             figure
             indx=1;
-            for m=1:length(alphaType)
+            for m=1:length(aType)
                 t   = getrow(T,T.distType==d & T.alphaType==m);
                 subplot(2,2,indx)
                 pos = [0 cumsum(t.nDist1)];
                 scatterplot(pos',zeros(size(pos))','label',t.order1,'markersize',8);
                 drawline(0,'dir','horz');
-                title(sprintf('%s-%s direction 1',distType{d},alphaType{m}));
+                title(sprintf('%s-%s direction 1',distType{d},aType{m}));
                 subplot(2,2,indx+1)
                 pos = [0 cumsum(t.nDist2)];
                 scatterplot(pos',zeros(size(pos))','label',t.order2,'markersize',8);
                 drawline(0,'dir','horz');
-                title(sprintf('%s-%s direction 2',distType{d},alphaType{m}));
+                title(sprintf('%s-%s direction 2',distType{d},aType{m}));
                 indx = indx+2;
             end
         end
@@ -954,10 +952,9 @@ switch what
         % plot the order for undirected graph
         T=varargin{1}; % data structure
         distType={'univariate','multivariate'};
-        alphaType={'correlation','cosine'};
         for d=1:length(distType)
             figure
-            for m=1:length(alphaType)
+            for m=1:length(aType)
                 t   = getrow(T,T.distType==d & T.alphaType==m);
                 l   = linkage(t.centr{:},'ward','euclidean');
                 figure
@@ -965,7 +962,7 @@ switch what
                 hold on;
                 ylim=get(gca,'ylim');
                 plot(1:8,ylim(1),'o','markersize',10);
-                title(sprintf('%s %s - error %2.1f',distType{d},alphaType{m},t.error));
+                title(sprintf('%s %s - error %2.1f',distType{d},aType{m},t.error));
             end
         end
     case 'plot_cluster_directed'        % DEPRECIATED
@@ -991,7 +988,6 @@ switch what
         n_dim   = 2; % number of dimensions to consider
         n_neigh = 2; % number of neighbours to consider
         dataType = {'univariate','multivariate'};
-        metricType = {'correlation','cosine'};
         a = load(fullfile(baseDir,sprintf('alexnet_%s_alpha',actUse)),'alpha');
         A = a.alpha;
         figure; indx=1;
@@ -1000,7 +996,7 @@ switch what
                 % test on multi-cosine distance
                 D = rsa_squareRDM(A{d}.dist(A{d}.distType==m)');
                 % submit to topology function
-                [mX,mp] = topology_estimate(D,n_dim,n_neigh,'dataType','raw');
+                [mX,mp] = topology_estimate(D,n_dim,n_neigh);
                 subplot(2,2,indx)
                 hold on;
                 W = full(mp.D);
@@ -1010,7 +1006,7 @@ switch what
                     plot([mX(r(i),1),mX(c(i),1)],[mX(r(i),2),mX(c(i),2)],'LineWidth',(1/val(i)),'Color',repmat(val(i),3,1)./(max(val)+0.1));
                 end
                 scatterplot(mX(:,1),mX(:,2),'label',(1:8),'split',(1:8)','markercolor',mColor,'markertype','.','markersize',40);
-                title(sprintf('%s - %s',dataType{d},metricType{m}));
+                title(sprintf('%s - %s',dataType{d},aType{m}));
                 indx=indx+1;
                 
             end
@@ -1024,7 +1020,7 @@ switch what
         metrics={'scaleDist','diagRange','eigStd','dimension'};
         for m = 1:length(metrics)
             t = rsa_squareIPMfull(A.(metrics{m})'); % t+t' to make it undirected
-            [mX,mp] = topology_estimate(t+t',n_dim,n_neigh,'dataType','raw');
+            [mX,mp] = topology_estimate(t+t',n_dim,n_neigh);
             subplot(1,length(metrics),m)
             hold on;
                 W = full(mp.D);
@@ -1047,9 +1043,9 @@ switch what
          for i=1:numLayer
              Gn(i,:)=rsa_vectorizeIPMfull(G{i})';
          end
-         [mR,~] = topology_estimate(RDM,n_dim,n_neigh,'dataType','raw');
-         [mU,~] = topology_estimate(U,n_dim,n_neigh,'dataType','raw');
-         [mG,~] = topology_estimate(Gn,n_dim,n_neigh,'dataType','raw');
+         [mR,~] = topology_estimate(RDM,n_dim,n_neigh);
+         [mU,~] = topology_estimate(U,n_dim,n_neigh);
+         [mG,~] = topology_estimate(Gn,n_dim,n_neigh);
          figure
          subplot(131)
          scatterplot(mU(:,1),mU(:,2),'label',1:8,'split',(1:8)','markercolor',mColor,'markertype','.','markersize',25);
@@ -1072,7 +1068,7 @@ switch what
         end
         D = squareform(pdist(U,'cosine'));
         ind = kron(1:numLayer,ones(1,numVox))';
-        [m,mp] = topology_estimate(D,nDim,nNeigh,'dataType','raw');
+        [m,mp] = topology_estimate(D,nDim,nNeigh);
         figure
         subplot(221)
         imagesc(mp.D); title('sorted adjacency matrix');
@@ -1092,6 +1088,7 @@ switch what
         for i=1:numLayer
             U = [U; act{i}'];
         end
+        dist=cell(2,1);
         for i=1:2
             if strcmp(aType{i},'correlation')
                     % additional step for correlation - first remove the mean
@@ -1101,17 +1098,18 @@ switch what
             tmpR  = U*U'; % correlation across RDMs
             dist{i} = 1-tmpR;
         end
+        varargout{1}=dist;
         save(fullfile(baseDir,'alexnet_allUnits_uniDist'),'dist');
     case 'allUnits_cluster'
         % determine clustering across units
-        load(fullfile(baseDir,'alexnet_allUnits_uniDist'));
+        d=load(fullfile(baseDir,'alexnet_allUnits_uniDist'));
         
-        thres = [0,500:500:4000];
+        %thres = [0,500:500:4000];
         
         figure
-        for a=1:size(dist,2)
+        for a=1:size(d.dist,2)
             % create an adjacency matrix
-            t = dist{a};
+            t = d.dist{a};
             % create a matrix of similarity
             t2 = t./max(max(t));
             W = 1-t2;
