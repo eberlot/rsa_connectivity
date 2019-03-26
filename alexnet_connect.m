@@ -28,9 +28,11 @@ function varargout = alexnet_connect(what,varargin)
 %
 % usage: alexnet_connect('run_all','figOn',1);
 %
+% directory, files
 baseDir = '/Volumes/MotorControl/data/rsa_connectivity/alexnet';
 load(fullfile(baseDir,'imageActivations_alexNet_4Eva'),'activations_rand','activations_correct');
 load(fullfile(baseDir,'imageAct_subsets'),'act_subsets'); 
+% parameters to initialise
 randOrder = [8 1 7 6 4 2 3 5]; % how the order was first determined - using activations_rand - double blind procedure
 correctOrder = 1:8; % correct order
 numLayer = 8;
@@ -946,8 +948,7 @@ switch what
             O.distName    = {var};
             OO=addstruct(OO,O);
         end
-        varargout{1}=OO;
-   
+        varargout{1}=OO; 
     case 'plot_cluster_undirected'      % DEPRECIATED
         % plot the order for undirected graph
         T=varargin{1}; % data structure
@@ -1078,6 +1079,7 @@ switch what
         legLab = {'layer1','layer2','layer3','layer4','layer5','layer6','layer7','layer8'};
         scatterplot3(m(:,1),m(:,2),m(:,3),'split',ind,'markercolor',mColor,'markertype',{'.'},'markerfill',[1 1 1],'markersize',20,'leg',legLab);
         title(sprintf('estimated topology in %1.0fD with %2.0f neighbours per point',nDim,nNeigh)); axis equal; axis off;
+    
     case 'allUnits_activation'
         % here determine the activation profile, similarity matrix of
         % all units (well, subset - 500 per layer)
@@ -1150,8 +1152,7 @@ switch what
             act_subsets{i} = act{i}(:,sample_wor(1:size(act{i},2),1,nVox));
         end
         save(fullfile(baseDir,'imageAct_subsets'),'act_subsets');
-    
-        
+            
     otherwise
         fprintf('This case does not exist!');
 end
