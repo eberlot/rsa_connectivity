@@ -15,7 +15,7 @@ function [mappedY, mapping] = topology_estimate(Y,n_dim,k)
 %           - mapping: structure providing additional info on the mapping
 %
 % example usage: [X,mp] = topology_estimate(data,3,10)
-%
+% EBerlot, March 2018
 %--------------------------------------------------------------------------
     n = size(Y,1);
     ni = zeros(n,k);
