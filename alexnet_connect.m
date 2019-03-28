@@ -43,9 +43,9 @@ aType = {'correlation','cosine'};
 mColor={[84 13 100]/255,[238 66 102]/255,[14 173 105]/255,[59 206 172]/255,[255 210 63]/255,[78 164 220]/255,[176 0 35]/255,[170 170 170]/255};
 
 % ----------------------- main file to consider --------------------------
-actUse = 'kClust'; % here change random or correct
+actUse = 'correct'; % here change random or correct
 order = correctOrder;
-if strcmp(actUse,'random') % choose the ordering
+if strcmp(actUse,'correct') % choose the ordering
     act = activations_correct;
 elseif strcmp(actUse,'random')
     order = randOrder;
@@ -893,6 +893,7 @@ switch what
                 D = rsa_squareRDM(A{d}.dist(A{d}.distType==m)');
                 % submit to topology function
                 [mX,mp] = topology_estimate(D,n_dim,n_neigh);
+            %   mX = tsne(D,[],n_dim,8); - this currently not working
                 subplot(2,2,indx)
                 hold on;
                 W = full(mp.D);
