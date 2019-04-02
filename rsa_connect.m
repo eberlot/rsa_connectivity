@@ -1158,7 +1158,7 @@ switch rdmType
         M.Gc=D;
 end
 end
-function data   = addSharedNoise(data,var,r)
+function data   = addSharedNoise(data,Var,r)
 % input: 
 % data - datasets
 % alpha - variance
@@ -1167,7 +1167,7 @@ function data   = addSharedNoise(data,var,r)
     nVox    = size(data{1},2);
     nTrials = size(data{1},1);
     Z = normrnd(0,1,nTrials,nDataset*nVox);
-    A = eye(nDataset)*var+(ones(nDataset)-eye(nDataset))*var*r;
+    A = eye(nDataset)*Var+(ones(nDataset)-eye(nDataset))*Var*r;
     P = kron(A,eye(nVox)); 
     Zn = Z*sqrtm(P);     % shared noise matrix across reg
     for i=1:nDataset

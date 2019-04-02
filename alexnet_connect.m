@@ -31,19 +31,18 @@ function varargout = alexnet_connect(what,varargin)
 % ---------------------- directory, files --------------------------------
 baseDir = '/Volumes/MotorControl/data/rsa_connectivity/alexnet';
 load(fullfile(baseDir,'imageActivations_alexNet_4Eva'),'activations_rand','activations_correct');
-load(fullfile(baseDir,'imageAct_subsets'),'act_subsets'); 
-load(fullfile(baseDir,'imageAct_kClust'),'act_kClust'); 
+
 % ------------------- parameters to initialise ---------------------------
 randOrder = [8 1 7 6 4 2 3 5]; % how the order was first determined - using activations_rand - double blind procedure
 correctOrder = 1:8; % correct order
 numLayer = 8;
 aType = {'correlation','cosine'};
-
+dType = {'univariate','multivariate'};
 % ----------------------- for plotting -----------------------------------
 mColor={[84 13 100]/255,[238 66 102]/255,[14 173 105]/255,[59 206 172]/255,[255 210 63]/255,[78 164 220]/255,[176 0 35]/255,[170 170 170]/255};
 
 % ----------------------- main file to consider --------------------------
-actUse = 'correct'; % here change random or correct
+actUse = 'shuffled_subsets'; % here change random, correct or other options
 order = correctOrder;
 if strcmp(actUse,'correct') % choose the ordering
     act = activations_correct;
@@ -51,9 +50,19 @@ elseif strcmp(actUse,'random')
     order = randOrder;
     act = activations_rand;
 elseif strcmp(actUse,'subsets')
+    load(fullfile(baseDir,'imageAct_subsets'),'act_subsets'); 
     act = act_subsets;
 elseif strcmp(actUse,'kClust')
+    load(fullfile(baseDir,'imageAct_kClust'),'act_kClust'); 
     act = act_kClust;
+elseif strcmp(actUse,'normalized')
+    load(fullfile(baseDir,'imageAct_normalized'),'actN'); 
+    act = actN;
+elseif strcmp(actUse,'correctOrd_subsets')
+    load(fullfile(baseDir,'imageAct_subsets_normalized'));
+    act = actN;
+elseif strcmp(actUse,'shuffled_subsets')
+    load(fullfile(baseDir,'imageAct_subsets_normalized_shuffled'));
 else
     error('wrong option!\n');
 end
@@ -192,7 +201,7 @@ switch what
             for i=1:nLayer
                 nVox = size(act{i},2);
                 G{i} = act{i}*act{i}'/nVox;
-                G{i} = G{i}./trace(G{i});
+                G{i} = G{i}./trace(G{i}); % here also double center first?
             end
             varargout{1}=vout(G);
         case 'estimateRDM'
@@ -230,7 +239,24 @@ switch what
                 %U(i,:)=mean(act{i},2)';
             end
             varargout{1}=U;
-        
+        case 'estimate_firstLevel_all'
+            % estimate all metrics together (G,RDM,U)
+            act = varargin{1};
+            G = cell(numLayer,1);
+            nCond = size(act{1},1);
+            % contrast matrix for G->distances
+            C = indicatorMatrix('allpairs',1:nCond);
+            RDM = zeros(numLayer,size(C,1));
+            U = zeros(numLayer,nCond);
+            for i=1:numLayer
+                nVox = size(act{i},2);
+                G{i} = act{i}*act{i}'/nVox;
+                G{i} = G{i}./trace(G{i});
+                RDM(i,:) = diag(C*G{i}*C')';
+                t=bsxfun(@minus,act{i},mean(act{i},1));  %  remove the mean activation
+                U(i,:)=mean(t,2)';
+            end
+        varargout{1}=G;varargout{2}=RDM;varargout{3}=U;
     case 'estimate_distance' 
         %% esimate distance between layers - 2nd level
         RDM = varargin{1};
@@ -308,11 +334,11 @@ switch what
             for i2=1:numG
                 T.l1=i1;
                 T.l2=i2;
-                [Tr,predG,~,corDist]  = calcTransformG(G{T.l1},G{T.l2}); % can retrieve cosine distance
-                T.T             = rsa_vectorizeIPMfull(round(Tr,3));
-                T.predG         = rsa_vectorizeIPMfull(predG);
-                T.corDist       = corDist;
-                T.distType      = ones(size(T.l1));
+                [Tr,predG,~,corDist]    = calcTransformG(G{T.l1},G{T.l2}); % can retrieve cosine distance
+                T.T                     = rsa_vectorizeIPMfull(round(Tr,3));
+                T.predG                 = rsa_vectorizeIPMfull(predG);
+                T.corDist               = corDist;
+                T.distType              = ones(size(T.l1));
                 TT=addstruct(TT,T);
                 if figOn
                     subplot(numG,numG,(i1-1)*numG+i2);
@@ -347,9 +373,9 @@ switch what
             [T.scalar,T.scaleFit,T.scaleDist]   = alexnet_connect('scaleT',T,G); 
             [T.diagFit,T.diagDist]              = alexnet_connect('diagT',T,G); 
             T.diagRange                         = alexnet_connect('diagRange',T);
-            T.rank                              = alexnet_connect('rank',T);
+        %    T.rank                              = alexnet_connect('rank',T);
             [T.eig,T.eigStd]                    = alexnet_connect('eigenvalues',T);
-            [T.dimFit,T.dimDist,T.dimension]    = alexnet_connect('dimensionT',T,G,figOn);
+         %   [T.dimFit,T.dimDist,T.dimension]    = alexnet_connect('dimensionT',T,G,figOn);
             varargout{1} = T; % output - added fields characterize T
         case 'scaleT'
             % how different is T from a pure 'scaling' transformation
@@ -477,7 +503,35 @@ switch what
                 xlabel('Dimensions assessed');
                 ylabel('corr(trueG - predG)');
             end
-            
+        case 'T_doAll'
+            % here estimate T + derive all metrics
+            G=varargin{1};
+            numG = size(G,1);
+            TT=[];
+            for i1=1:numG % all pairs (because T is not symmetric)
+                for i2=1:numG
+                    T.l1=i1;
+                    T.l2=i2;
+                    [Tr,~,~,~]              = calcTransformG(G{T.l1},G{T.l2}); % can retrieve cosine distance
+                    T.T                     = rsa_vectorizeIPMfull(round(Tr,3));
+                    T.distType              = ones(size(T.l1));
+                    % here characterise T
+                    % scaling
+                    scalar                  = mean(diag(Tr)); % which scalar
+                    scaleTr                 = eye(size(Tr))*scalar; % simplified transform - only scalar
+                    [~,~,T.scaleDist]       = predictGfromTransform(G{T.l1},scaleTr,'G2',G{T.l2});
+                    % diagonal + range
+                    diagTr                  = Tr.*eye(size(Tr));
+                    [~,~,T.diagDist]        = predictGfromTransform(G{T.l1},diagTr,'G2',G{T.l2});
+                    diagTr                  = diag(Tr);
+                    T.diagRange             = max(diagTr)-min(diag(Tr));
+                    % eigenvalues
+                    eigT                    = eig(Tr)';
+                    T.eigStd                = std(eigT);
+                    TT=addstruct(TT,T);
+                end
+            end
+    varargout{1}=TT;
     case 'layer_order_undirected'
         %% estimate the order between layers for a given metric (undirected)
         alpha   = varargin{1};
@@ -877,12 +931,13 @@ switch what
             ylabel(var{i});
         end
 
-    case 'estimate_topology_alpha'
+    case 'topology_alpha'
         % here estimate topology for different alpha metrics - univariate /
         % multivariate
         % some parameters
-        n_dim   = 2; % number of dimensions to consider
+        n_dim   = 1; % number of dimensions to consider
         n_neigh = 2; % number of neighbours to consider
+        vararginoptions(varargin,{'n_dim','n_neigh'});
         dataType = {'univariate','multivariate'};
         a = load(fullfile(baseDir,sprintf('alexnet_%s_alpha',actUse)),'alpha');
         A = a.alpha;
@@ -899,36 +954,40 @@ switch what
                 W = full(mp.D);
                 [r,c,val] = find(W);
                 val = val./max(val); % renormalize
-                for i=1:length(r)
-                    plot([mX(r(i),1),mX(c(i),1)],[mX(r(i),2),mX(c(i),2)],'LineWidth',(1/val(i)),'Color',repmat(val(i),3,1)./(max(val)+0.1));
-                end
-                scatterplot(mX(:,1),mX(:,2),'label',(1:8),'split',(1:8)','markercolor',mColor,'markertype','.','markersize',40);
-                title(sprintf('%s - %s',dataType{d},aType{m}));
-                indx=indx+1;
-                
+             %   for i=1:length(r)
+             %       plot([mX(r(i),1),mX(c(i),1)],[mX(r(i),2),mX(c(i),2)],'LineWidth',(1/val(i)),'Color',repmat(val(i),3,1)./(max(val)+0.1));
+             %   end
+               % scatterplot(mX(:,1),mX(:,2),'label',(1:8),'split',(1:8)','markercolor',mColor,'markertype','.','markersize',40);
+               scatterplot((1:8)',mX(:,1),'label',(1:8),'split',(1:8)','markercolor',mColor,'markertype','.','markersize',40); 
+               title(sprintf('%s - %s',dataType{d},aType{m}));
+               indx=indx+1;
             end
         end
-    case 'estimate_topology_directed'
+    case 'topology_directed'
         % estimate topology for directional metrics
-        n_dim   = 2; % number of dimensions to consider
+        n_dim   = 1; % number of dimensions to consider
         n_neigh = 2; % number of neighbours to consider
+        vararginoptions(varargin,{'n_dim','n_neigh'});
         a = load(fullfile(baseDir,sprintf('alexnet_%s_alpha',actUse)),'alpha');
         A = a.alpha{3};
-        metrics={'scaleDist','diagRange','eigStd','dimension'};
+        metrics={'scaleDist','diagRange','eigStd'};
+        figure
         for m = 1:length(metrics)
             t = rsa_squareIPMfull(A.(metrics{m})'); % t+t' to make it undirected
+            %[mX,mp] = topology_estimate(t+t',n_dim,n_neigh);
             [mX,mp] = topology_estimate(t+t',n_dim,n_neigh);
             subplot(1,length(metrics),m)
             hold on;
-                W = full(mp.D);
-                [r,c,val] = find(W);
-                for i=1:length(r)
-                    plot([mX(r(i),1),mX(c(i),1)],[mX(r(i),2),mX(c(i),2)],'LineWidth',(1/val(i)),'Color',repmat(val(i),3,1)./(max(val)+0.05));
-                end
-            scatterplot(mX(:,1),mX(:,2),'label',(1:8),'split',(1:8)','markercolor',mColor,'markertype','.','markersize',40);
+            W = full(mp.D);
+            [r,c,val] = find(W);
+            %   for i=1:length(r)
+            %       plot([mX(r(i),1),mX(c(i),1)],[mX(r(i),2),mX(c(i),2)],'LineWidth',(1/val(i)),'Color',repmat(val(i),3,1)./(max(val)+0.05));
+            %   end
+            %  scatterplot(mX(:,1),mX(:,2),'label',(1:8),'split',(1:8)','markercolor',mColor,'markertype','.','markersize',40);
+            scatterplot((randOrder)',mX(:,1),'label',(randOrder),'split',(1:8)','markercolor',mColor,'markertype','.','markersize',40);
             title(metrics{m});
         end
-    case 'estimate_topology_firstLevel'
+    case 'topology_firstLevel'
         % estimate topology using first level metrics instead of distances
          n_dim   = 2; % number of dimensions to consider
          n_neigh = 2; % number of neighbours to consider
@@ -974,7 +1033,7 @@ switch what
          end
          scatterplot(mG(:,1),mG(:,2),'label',1:8,'split',(1:8)','markercolor',mColor,'markertype','.','markersize',25);
          title('estimate from G');
-    case 'estimate_topology_allUnits_subset'
+    case 'topology_allUnits_subset'
         load(fullfile(baseDir,'imageAct_subsets'));
         numVox = 100;
         nNeigh = 20;
@@ -996,7 +1055,7 @@ switch what
         legLab = {'layer1','layer2','layer3','layer4','layer5','layer6','layer7','layer8'};
         scatterplot3(m(:,1),m(:,2),m(:,3),'split',ind,'markercolor',mColor,'markertype',{'.'},'markerfill',[1 1 1],'markersize',20,'leg',legLab);
         title(sprintf('estimated topology in %1.0fD with %2.0f neighbours per point',nDim,nNeigh)); axis equal; axis off;
-    case 'estimate_topology_kClust_alpha'
+    case 'topology_kClust_alpha'
         n_dim = 2;
         n_neigh = 8;
         dataType = {'univariate','multivariate'};        
@@ -1007,6 +1066,7 @@ switch what
             for m = 1:2 % cosine or correlation
                 % test on multi-cosine distance
                 D = rsa_squareRDM(A{d}.dist(A{d}.distType==m)');
+               % D = D(5:end,5:end); % remove the first layer
                 % submit to topology function
                 [mX,mp] = topology_estimate(D,n_dim,n_neigh);
                 subplot(2,2,indx)
@@ -1024,16 +1084,17 @@ switch what
                 indx=indx+1;    
             end
         end
-    case 'estimate_topology_kClust_directed'
+    case 'topology_kClust_directed'
         % estimate topology for directional metrics
         n_dim   = 2; % number of dimensions to consider
         n_neigh = 8; % number of neighbours to consider
         a = load(fullfile(baseDir,'alexnet_kClust_alpha'),'alpha');
         A = a.alpha{3};
-        metrics={'scaleDist','diagRange','eigStd','dimension'};
+        metrics={'scaleDist','diagDist','diagRange','eigStd'};
         figure
         for m = 1:length(metrics)
             t = rsa_squareIPMfull(A.(metrics{m})'); % t+t' to make it undirected
+            t = t(5:end,5:end); % remove the first layer
             [mX,mp] = topology_estimate(t+t',n_dim,n_neigh);
             subplot(1,length(metrics),m)
             hold on;
@@ -1045,62 +1106,420 @@ switch what
                 for i=1:length(r)
                     plot([mX(r(i),1),mX(c(i),1)],[mX(r(i),2),mX(c(i),2)],'LineWidth',val2(i),'Color',repmat(val2(i),3,1)./(max(val2)+0.1));
                 end
-            scatterplot(mX(:,1),mX(:,2),'label',kron(1:8,ones(1,4)),'split',kron(1:8,ones(1,4))','markercolor',mColor,'markertype','.','markersize',40);
+            scatterplot(mX(:,1),mX(:,2),'label',kron(2:8,ones(1,4)),'split',kron(2:8,ones(1,4))','markercolor',mColor,'markertype','.','markersize',40);
             title(metrics{m});
         end
-        
+     
     case 'allUnits_activation'
         % here determine the activation profile, similarity matrix of
         % all units (well, subset - 500 per layer)
         % univariate only (there is no multivariate per unit)
         load(fullfile(baseDir,'imageAct_subsets'));
+        vararginoptions(varargin,{'plotOn'});
         % reshape
         U = [];
+        % for multivariate distances (per unit)
+        M = [];
         for i=1:numLayer
-            U = [U; act{i}'];
+            U = [U; act_subsets{i}'];
+            for j=1:size(act_subsets{i},2)
+                M = [M;(pdist(act_subsets{i}(:,j),'Euclidean'))];
+            end
         end
-        dist=cell(2,1);
+        uniDist=cell(2,1); multiDist=cell(2,1);
         for i=1:2
             if strcmp(aType{i},'correlation')
-                    % additional step for correlation - first remove the mean
-                    U  = bsxfun(@minus,U,mean(U,2));
+                % additional step for correlation - first remove the mean
+                U2  = bsxfun(@minus,U,mean(U,2));
+                M2  = bsxfun(@minus,M,mean(M,2)); 
+            else
+                U2  = U; 
+                M2  = M;
             end
-            U  = normalizeX(U);
-            tmpR  = U*U'; % correlation across RDMs
-            dist{i} = 1-tmpR;
+            U2  = normalizeX(U2);
+            M2  = normalizeX(M2);
+            tmpU  = U2*U2'; % correlation across RDMs
+            tmpM  = M2*M2'; % correlation across RDMs
+            uniDist{i} = 1-tmpU;
+            multiDist{i} = 1-tmpM;
         end
-        varargout{1}=dist;
-        save(fullfile(baseDir,'alexnet_allUnits_uniDist'),'dist');
+        varargout{1}=uniDist; varargout{2}=multiDist;
+        if plotOn
+            figure
+            subplot(221)
+            imagesc(uniDist{1}); title(sprintf('uni-%s',aType{1}));
+            subplot(222)
+            imagesc(uniDist{2}); title(sprintf('uni-%s',aType{2}));
+            subplot(223)
+            imagesc(multiDist{1}); title(sprintf('multi-%s',aType{1}));
+            subplot(224)
+            imagesc(multiDist{2}); title(sprintf('multi-%s',aType{2}));
+        end
+        save(fullfile(baseDir,'alexnet_allUnits_dist'),'uniDist','multiDist');
     case 'allUnits_cluster'
         % determine clustering across units
-        d=load(fullfile(baseDir,'alexnet_allUnits_uniDist'));
+        D=load(fullfile(baseDir,'alexnet_allUnits_dist'));
+        figure
+        idx=1;
+        for dt=1:2
+            if dt==1
+                d=D.uniDist;
+            else
+                d=D.multiDist;
+            end
+            for a=1:size(d,1)
+                % create an adjacency matrix
+                t = d{a};
+                % create a matrix of similarity
+                t2 = t./max(max(t));
+                W = 1-t2;
+                subplot(2,4,idx)
+                imagesc(W);
+                title(sprintf('%s %s similarity matrix',aType{a},dType{dt}));
+                [cl,~] = kmeans(W,8);
+                subplot(2,4,idx+4)
+                imagesc([cl, kron(1:numLayer,ones(1,500))']);
+                title('estimated clusters (left) true layers (right)');
+                idx=idx+1;
+            end
+        end
+        colormap('hot');
+    case 'allUnits_topology'
+        D=load(fullfile(baseDir,'alexnet_allUnits_dist'));
+        nNeigh = 100;
+        nDim = 3;
+        ind = kron(1:numLayer,ones(1,500))'; % indicate which layer
+        for dt=1:2
+            if dt==1
+                d=D.uniDist;
+            else
+                d=D.multiDist;
+            end
+            for a=1:size(d,1)
+                % create an adjacency matrix
+                t = d{a};
+                t = t(501:end,501:end);
+                [m,mp] = topology_estimate(t,nDim,nNeigh);
+                figure
+                subplot(221)
+                imagesc(mp.D); title(sprintf('sorted adjacency matrix - %s %s',dType{dt},aType{a}));
+                subplot(222)
+                imagesc(mp.DD); title('shortest path matrix');
+                subplot(2,2,3:4);
+                legLab = {'layer2','layer3','layer4','layer5','layer6','layer7','layer8'};
+                scatterplot3(m(:,1),m(:,2),m(:,3),'split',ind(501:end),'markercolor',mColor(2:end),'markertype',{'.'},'markerfill',[1 1 1],'markersize',20,'leg',legLab);
+                title(sprintf('estimated topology in %1.0fD with %2.0f neighbours per point',nDim,nNeigh)); axis equal; axis off;       
+            end
+        end
+            
+    case 'validate_noiseless_subsetUnit'
+        % validate topology in the noiseless case by subsampling units
+        % use the normalized activation units here
+        nSim        = 100; % number of simulations
+        nUnits      = 500; % number of units to sample at a time
+        nDim        = 1;
+        nNeigh      = 2;
+        dirMetrics  = {'scaleDist','diagDist','diagRange','eigStd'}; % directional metrics to consider
+        vararginoptions(varargin,{'nSim','nUnits','nDim','nNeigh'});
         
-        %thres = [0,500:500:4000];
+        dataType    = [1 1 2 2 repmat(3,1,length(dirMetrics))]; % uni / multi / directional
+        metricType  = [1 2 1 2 3:2+length(dirMetrics)]; % corr / cos / scaleDist...
+        VV = [];
+        for n=1:nSim % simulations
+            tStart=tic;
+            act_subsets = cell(numLayer,1);
+            for i=1:numLayer
+                rUnits = randperm(size(act{i},2)); % randomise the order of units
+                act_subsets{i} = act{i}(:,rUnits(1:nUnits));
+            end
+            %% 1) here estimate first level
+            [G,RDM,U] = alexnet_connect('estimate_firstLevel_all',act_subsets); 
+            %% 2) estimate second level metrics (between RDMs, Gs)
+            % 2a) calculate distance based on mean activity (univariate)
+            A{1} = alexnet_connect('estimate_distance',U,0,'univariate'); % 0 for no figure
+            % 2b) calculate distance between RDMs (cosine, correlation)
+            A{2} = alexnet_connect('estimate_distance',RDM,0,'RDM');
+            % 2c) calculate transformation matrices T between Gs
+            A{3} = alexnet_connect('T_doAll',G);
+            %% 3) estimate topology
+            for m = 1:length(metricType)
+                d = dataType(m);
+                if d<3 % uni / multivariate - corr / cos
+                    D = rsa_squareRDM(A{d}.dist(A{d}.distType==metricType(m))');
+                else % directional
+                    t = rsa_squareIPMfull(A{d}.(dirMetrics{m-4})');
+                    D = t+t'; % make it symmetric
+                end
+                % submit to topology function
+                try
+                    [mX,~] = topology_estimate(D,nDim,nNeigh);
+                    % assess fit
+                    [~,j] = sort(mX(:,1));
+                    V.estimateOrder = j';
+                    orderLR = sum(V.estimateOrder==order)/length(V.estimateOrder);
+                    orderRL = sum(V.estimateOrder==flip(order))/length(V.estimateOrder);
+                    V.accu  = max([orderRL orderLR]); % allow swap of order
+                    V.correct = floor(V.accu); % only give 1 if exactly correct   
+                catch
+                    V.estimateOrder = nan(1,8);
+                    V.accu          = nan; % allow swap of order
+                    V.correct       = nan; % only give 1 if exactly correct
+                end
+                V.dataType  = d; % uni / multi / directional
+                V.metricType = metricType(m); % corr / cos / eigStd ...
+                V.numSim = n;
+                VV=addstruct(VV,V);
+
+            end
+            fprintf('\n%d. simulation done...',n);
+            toc(tStart);
+        end
+        % save here
+        save(fullfile(baseDir,'validate_noiseless_subsetUnits'),'-struct','VV');
+    case 'validate_noiseless_subsetCond'
+        % validate topology in the noiseless case by subsampling conditions
+        nSim        = 100; % number of simulations
+        nCond       = 50;  % number of conditions to sample at a time
+        nDim        = 1;
+        nNeigh      = 2;
+        dirMetrics  = {'scaleDist','diagDist','diagRange','eigStd'}; % directional metrics to consider
+        vararginoptions(varargin,{'nSim','nUnits','nDim','nNeigh'});
+        
+        dataType    = [1 1 2 2 repmat(3,1,length(dirMetrics))]; % uni / multi / directional
+        metricType  = [1 2 1 2 3:2+length(dirMetrics)]; % corr / cos / scaleDist...
+        VV = [];
+        for n=1:nSim % simulations
+            tStart=tic;
+            act_subsets = cell(numLayer,1);
+            rCond = randperm(size(act{1},1)); % randomise the conditions
+            for i=1:numLayer
+                act_subsets{i} = act{i}(rCond(1:nCond),:);
+            end
+            %% 1) here estimate first level
+            [G,RDM,U] = alexnet_connect('estimate_firstLevel_all',act_subsets); 
+            %% 2) estimate second level metrics (between RDMs, Gs)
+            % 2a) calculate distance based on mean activity (univariate)
+            A{1} = alexnet_connect('estimate_distance',U,0,'univariate'); % 0 for no figure
+            % 2b) calculate distance between RDMs (cosine, correlation)
+            A{2} = alexnet_connect('estimate_distance',RDM,0,'RDM');
+            % 2c) calculate transformation matrices T between Gs
+            A{3} = alexnet_connect('T_doAll',G);
+            %% 3) estimate topology
+            for m = 1:length(metricType)
+                d = dataType(m);
+                if d<3 % uni / multivariate - corr / cos
+                    D = rsa_squareRDM(A{d}.dist(A{d}.distType==metricType(m))');
+                else % directional
+                    t = rsa_squareIPMfull(A{d}.(dirMetrics{m-4})'); % t+t' to make it undirected
+                    D = t+t'; % make it symmetric
+                end
+                try
+                % submit to topology function
+                [mX,~] = topology_estimate(D,nDim,nNeigh);
+                % assess fit
+                [~,j] = sort(mX(:,1));
+                V.estimateOrder = j';
+                orderLR = sum(V.estimateOrder==order)/length(V.estimateOrder);
+                orderRL = sum(V.estimateOrder==flip(order))/length(V.estimateOrder);
+                V.accu  = max([orderRL orderLR]); % allow swap of order
+                catch
+                    V.estimateOrder = nan(1,8);
+                    V.accu          = nan; % allow swap of order
+                    V.correct       = nan; % only give 1 if exactly correct
+                end
+                V.correct       = floor(V.accu); % only give 1 if exactly correct
+                V.dataType      = d; % uni / multi / directional
+                V.metricType    = metricType(m); % corr / cos / eigStd ...
+                V.numSim        = n;
+                VV=addstruct(VV,V);
+            end
+            fprintf('\n%d. simulation done...',n);
+            toc(tStart);
+        end
+        % save here
+        save(fullfile(baseDir,'validate_noiseless_subsetCond'),'-struct','VV');
+    case 'plot_validate_noiseless_unit' 
+        T = load(fullfile(baseDir,'validate_noiseless_subsetUnits'));
+        tickLab = {'uni-corr','uni-cos','multi-corr','multi-cos','G-scaleDist','G-diagDist','G-diagRange','G-eigStd'};
+        DD=[];
+        for d=1:max(T.dataType)
+            G = getrow(T,T.dataType==d);
+            for m=unique(G.metricType)'
+                D.absCorr = sum(G.correct(G.metricType==m&~isnan(G.correct)));
+                D.relCorr = sum(G.accu(G.metricType==m&~isnan(G.accu)))/length(G.accu(G.metricType==m));
+                D.dataType = d;
+                D.metricType = m;
+                DD = addstruct(DD,D);
+            end
+        end
+        figure
+        subplot(211)
+        barplot(DD.dataType,DD.absCorr,'split',DD.metricType);
+        hold on; drawline(100,'dir','horz','linestyle','--');
+        set(gca,'XTickLabel',tickLab);
+        title('Correctly determined order - subsampling units in layer');
+        ylabel('N (out of 100 simulations)')
+        subplot(212)
+        barplot(DD.dataType,DD.relCorr,'split',DD.metricType);
+        hold on; drawline(1,'dir','horz','linestyle','--');
+        set(gca,'XTickLabel',tickLab);
+        title('Number of correctly determined layers in order');
+        ylabel('Average N');
+    case 'plot_validate_noiseless_cond'
+        T = load(fullfile(baseDir,'validate_noiseless_subsetCond'));
+        tickLab = {'uni-corr','uni-cos','multi-corr','multi-cos','G-scaleDist','G-diagDist','G-diagRange','G-eigStd'};
+        DD=[];
+        for d=1:max(T.dataType)
+            G = getrow(T,T.dataType==d);
+            for m=unique(G.metricType)'
+                D.absCorr = sum(G.correct(G.metricType==m&~isnan(G.correct)));
+                D.relCorr = sum(G.accu(G.metricType==m&~isnan(G.accu)))/length(G.accu(G.metricType==m));
+                D.dataType = d;
+                D.metricType = m;
+                DD = addstruct(DD,D);
+            end
+        end
+        figure
+        subplot(211)
+        barplot(DD.dataType,DD.absCorr,'split',DD.metricType);
+        hold on; drawline(100,'dir','horz','linestyle','--');
+        set(gca,'XTickLabel',tickLab);
+        title('Correctly determined order - subsampling conditions');
+        ylabel('N (out of 100 simulations)')
+        subplot(212)
+        barplot(DD.dataType,DD.relCorr,'split',DD.metricType);
+        hold on; drawline(1,'dir','horz','linestyle','--');
+        set(gca,'XTickLabel',tickLab);
+        title('Number of correctly determined layers in order');
+        ylabel('Average N');
+    
+    case 'simulate_noise'
+        nPart       = 8;
+        nSim        = 25;
+        noiseType   = 'neighbours'; % allEqual or neighbours
+        dataType    = 'correctOrd_subsets'; % correctOrd or shuffled
+        vararginoptions(varargin,{'nPart','nSim','noiseType','dataType'});
+        
+        % initialize
+        n_dim       = 1; % number of dimensions to consider
+        n_neigh     = 2; % number of neighbours to consider
+        dataInd     = [1 1 2 2 3 3 4 4 4 4 5 5 5 5 6]; % anzelotti as 6
+        alphaInd    = [1 2 1 2 1 2 3 4 5 6 3 4 5 6 7];
+        dirMetrics  = {'scaleDist','diagDist','diagRange','eigStd'};
+
+        switch  dataType
+            case 'correctOrd'
+                load(fullfile(baseDir,'imageAct_normalized'));
+                act = actN;
+            case 'shuffled_subsets'
+                load(fullfile(baseDir,'imageAct_subsets_normalized_shuffled'));
+            case 'correctOrd_subsets'
+                load(fullfile(baseDir,'imageAct_subsets_normalized'));
+                act = actN;
+        end
+        switch noiseType
+            case 'allEqual'
+                varReg = [0.001,0.01,0.1,1,5];
+                corrReg = 0:0.2:0.8;
+            case 'neighbours'
+                varReg = [0.001,0.01,0.1,1,5];
+                corrReg = 1;
+        end
+        % here repeat the true pattern for each partition
+        data = cell(numLayer,1);
+        for i=1:numLayer
+            data{i} = repmat(act{i},nPart,1);
+        end
+        VV=[];
+        for r=corrReg           % correlated noise
+            for v=varReg        % within noise
+                for n=1:nSim    % number of simulations
+                    tElapsed=tic;
+                    Data = addSharedNoise(data,v,r,noiseType);
+                    [fD{1},fD{2},fD{3},fD{4},fD{5}]=getFirstLevel(Data,nPart,size(act{1},1)); % order: uni, RDM, cRDM, G, cG
+                    A{1} = alexnet_connect('T_doAll',fD{4});
+                    A{2} = alexnet_connect('T_doAll',fD{5});
+                    % cycle around all combinations of data / metrics
+                    for i=1:length(dataInd)
+                        if dataInd(i)<4 % undirectional
+                            t=alexnet_connect('calcDist',fD{dataInd(i)},aType{alphaInd(i)});
+                            T = rsa_squareRDM(t.dist');
+                        elseif dataInd(i)>3 && dataInd(i)<6 % directional
+                            t = rsa_squareIPMfull(A{dataInd(i)-3}.(dirMetrics{alphaInd(i)-2})');
+                            T = t+t'; % make the directional matri symmetric
+                        else % Anzellotti
+                            T = anzellottiDist(Data,nPart,size(act{1},1));
+                        end
+                        try   % do topology
+                            [mX,~] = topology_estimate(T,n_dim,n_neigh);
+                            [~,j] = sort(mX(:,1));    % assess fit
+                            V.estimateOrder = j';
+                            orderLR = sum(V.estimateOrder==order)/length(V.estimateOrder);
+                            orderRL = sum(V.estimateOrder==flip(order))/length(V.estimateOrder);
+                            V.accu  = max([orderRL orderLR]); % allow swap of order
+                            V.correct = floor(V.accu); % only give 1 if exactly correct
+                        catch
+                            V.estimateOrder = nan(1,8);
+                            V.accu          = nan; 
+                            V.correct       = nan; 
+                        end
+                        V.dataType      = dataInd(i); % uni / multi / directional
+                        V.metricType 	= alphaInd(i); % corr / cos / eigStd ...
+                        V.metricIndex   = i;
+                        V.numSim        = n;
+                        V.corrReg       = r;
+                        V.varReg        = v;
+                        VV=addstruct(VV,V);
+                    end
+                    fprintf('\n%d. ',n);
+                    toc(tElapsed);
+                end
+                fprintf('\nFinished variance %d.\n\n',v);
+            end
+            fprintf('\nFinished correlation %d.\n\n',r);
+        end
+        save(fullfile(baseDir,sprintf('simulations_noise_%s_%s',noiseType,dataType)),'-struct','VV');
+        fprintf('\nDone simulations - %s - %s\n',noiseType,dataType);
+    case 'plot_noise'
+        noiseType   = 'allEqual'; % allEqual or neighbours
+        dataType    = 'correctOrd_subsets'; % correctOrd or shuffled
+        vararginoptions(varargin,{'noiseType','dataType'});
+        
+        T = load(fullfile(baseDir,sprintf('simulations_noise_%s_%s',noiseType,dataType)));
+        numSim = max(T.numSim);
+        DD=[];
+        for v=unique(T.varReg)'
+            for c=unique(T.corrReg)'
+                for d=1:max(T.dataType)
+                    G = getrow(T,T.dataType==d & T.corrReg==c & T.varReg==v);
+                    for m=unique(G.metricType)'
+                        D.absCorr = sum(G.correct(G.metricType==m&~isnan(G.correct)));
+                        D.relCorr = sum(G.accu(G.metricType==m&~isnan(G.accu)))/length(G.accu(G.metricType==m));
+                        D.dataType = d;
+                        D.metricType = m;
+                        D.corrReg = c;
+                        D.varReg = v;
+                        DD = addstruct(DD,D);
+                    end
+                end
+            end
+        end
         
         figure
-        for a=1:size(d.dist,2)
-            % create an adjacency matrix
-            t = d.dist{a};
-            % create a matrix of similarity
-            t2 = t./max(max(t));
-            W = 1-t2;
-            subplot(2,2,a)
-            imagesc(W);
-%             hold on;
-%             for i=1:numLayer
-%                 drawline(thres(i)+1:thres(i+1),'dir','vert','lim',[thres(i) thres(i)+1],'color',[1 1 1]);
-%                 drawline(thres(i)+1:thres(i+1),'dir','vert','lim',[thres(i+1) thres(i+1)+1],'color',[1 1 1]);
-%                 drawline(thres(i)+1:thres(i+1),'dir','horz','lim',[thres(i) thres(i)+1],'color',[1 1 1]);
-%                 drawline(thres(i)+1:thres(i+1),'dir','horz','lim',[thres(i+1) thres(i+1)+1],'color',[1 1 1])
-%                 drawline(thres(i)+1:thres(i+1),'dir','horz','lim',[thres(i) thres(i)+1],'color',[1 1 1])
-%             end
-            colormap('hot');
-            title(sprintf('%s univariate similarity matrix',aType{a}));
-            [cl,~] = kmeans(W,8);
-            subplot(2,2,a+2)
-            imagesc([cl, kron(1:numLayer,ones(1,500))']); 
-            title('estimated clusters (left) true layers (right)');
-        end
+        subplot(221)
+        barplot(DD.dataType,DD.absCorr,'split',DD.metricType,'subset',DD.varReg==0.001&DD.corrReg==1);
+        hold on; drawline(numSim,'dir','horz','linestyle','--');
+        subplot(222)
+        barplot(DD.dataType,DD.absCorr,'split',DD.metricType,'subset',DD.varReg==0.01&DD.corrReg==1);
+        hold on; drawline(numSim,'dir','horz','linestyle','--');
+        subplot(223)
+        barplot(DD.dataType,DD.absCorr,'split',DD.metricType,'subset',DD.varReg==0.1&DD.corrReg==1);
+        hold on; drawline(numSim,'dir','horz','linestyle','--');
+        subplot(224)
+        barplot(DD.dataType,DD.absCorr,'split',DD.metricType,'subset',DD.varReg==5&DD.corrReg==1);
+     %   barplot(DD.dataType,DD.absCorr,'split',DD.metricType,'subset',DD.varReg==1&DD.corrReg==0.8);
+        hold on; drawline(numSim,'dir','horz','linestyle','--');
+        
         
     case 'HOUSEKEEPING:correctOrder'
         % reorder activation units
@@ -1137,7 +1556,43 @@ switch what
             idx = idx+4;
         end
         save(fullfile(baseDir,'imageAct_kClust'),'act_kClust');
+    case 'HOUSEKEEPING:normalizeUnits'
+        % here normalize the activation in units (so the variance of signal
+        % is comparable across layers)
+        actN = cell(numLayer,1);
+        for i=1:numLayer
+            actN{i}=bsxfun(@minus,act{i},mean(act{i},1));  % first here remove the mean activation
+            actN{i}=actN{i}./max(max(actN{i}));
+        end
+        save(fullfile(baseDir,'imageAct_normalized'),'actN');
+    case 'HOUSEKEEPING:normalizeUnits_subsets'
+        % here normalize the activation in units (so the variance of signal
+        % is comparable across layers)
+        load(fullfile(baseDir,'imageAct_subsets'));
+        actN = cell(numLayer,1);
+        for i=1:numLayer
+            actN{i}=bsxfun(@minus,act_subsets{i},mean(act_subsets{i},1));  % first here remove the mean activation
+            actN{i}=actN{i}./max(max(actN{i}));
+        end
+        save(fullfile(baseDir,'imageAct_subsets_normalized'),'actN');
+    case 'HOUSEKEEPING:shuffle_normalizedSubsets'
+        % here shuffle the normalized subsets (case above)
+        load(fullfile(baseDir,'imageAct_subsets_normalized'));
+        act = cell(numLayer,1);
+        for i=1:numLayer % use the random order provided initially
+            act{i} = actN{randOrder(i)};
+        end
+        save(fullfile(baseDir,'imageAct_subsets_normalized_shuffled'),'act');
+    
+    case 'run_job'
+       % alexnet_connect('validate_noiseless_subsetUnit');
+       % alexnet_connect('validate_noiseless_subsetCond');
+       % alexnet_connect('simulate_noise');
+        alexnet_connect('simulate_noise','dataType','shuffled_subsets');
+        fprintf('Done shuffled!\n\n\n\n\n');
+        alexnet_connect('simulate_noise','noiseType','allEqual');
 
+    
     otherwise
         fprintf('This case does not exist!');
 end
@@ -1152,4 +1607,126 @@ vout = cell(1,nOUT);
 for i = 1:nOUT
     vout{i} = IN{i};
 end
+end
+function [data,corrNoise]   = addSharedNoise(data,Var,r,noiseType)
+% input: 
+% data - datasets
+% alpha - variance
+% r - correlation
+% noiseType - allEqual or neighbours
+    nDataset = size(data,1);
+    nTrials = size(data{1},1);
+    nVox    = size(data{1},2);
+    
+    % add shared noise (shared within / across regions)
+    Z = normrnd(0,1,nTrials,nDataset*nVox);
+    Z = Z./max(max(Z));
+    switch noiseType
+        case 'allEqual'
+            A = eye(nDataset)*Var+(ones(nDataset)-eye(nDataset))*Var*r;
+            P = kron(A,eye(nVox));
+            Zn = Z*sqrtm(P);     % shared noise matrix across reg
+%             
+%             Z = normrnd(0,1,nTrials,1);
+%             Z = Z./max(Z);
+%             % add random and shared noise per region (of variance)
+%             for i=1:nDataset
+%                 N = normrnd(0,1,nTrials,size(data{i},2)); % here random noise
+%                 N = N./max(max(N));
+%                 N = bsxfun(@plus,N.*Var,Z.*(Var*r)); % scale the random noise and add shared noise
+%                 data{i} = data{i}+N;
+%             end
+%             corrNoise = repmat(r,1,nDataset*(nDataset-1)/2);
+        case 'neighbours'
+            % first structured shared noise
+            kernelWidth = 1000; % decide on the kernel width
+            t           = 1:nVox*nDataset;
+            dist        = pdist(t');
+            noiseKernel = exp((-0.5*dist)/kernelWidth);
+            P           = squareform(noiseKernel);
+            %   Zn          = Z*real(sqrtm(P));
+            Zn          = Z*P;
+%             sNoise = zeros(nTrials,nDataset);
+%             for i=1:nDataset
+%                 nStep = abs(ind-i); % how many steps away
+%                 Z = normrnd(0,1,nTrials,1);
+%                 Z = Z./max(Z);
+%                 kernel = exp(-.5*nStep/kernelWidth);
+%                 Z_all = bsxfun(@times,Z,kernel);
+%                 sNoise = sNoise + Z_all;
+%             end
+%             sNoise = sNoise./max(max(sNoise)); %imagesc(corr(sNoise))
+%             Y_noise = zeros(nTrials,nDataset);
+%             % add all sources of noise
+%             for i=1:nDataset
+%                 % region specific noise N
+%                 N = normrnd(0,1,nTrials,size(data{i},2));
+%                % N = normrnd(0,1,nTrials,100);
+%                 N = N./max(max(N));
+%                 N = bsxfun(@plus,N*(1-r),sNoise(:,i).*r); % scale the random noise and add shared noise
+%                 data{i} = data{i} + Var.*N;
+%                 Y_noise(:,i)=nanmean(N,2);
+%             end
+%             corrNoise = rsa_vectorizeRDM(corr(Y_nosie));
+    end
+    Zn = Zn./max(max(Zn));
+    for i=1:nDataset
+        data{i} = data{i} + Var.*Zn(:,(i-1)*nVox+1:i*nVox);
+        data{i} = data{i}./max(max(data{i}));
+        meanU(:,i) = nanmean(data{i},2);
+    end
+     corrN = rsa_vectorizeRDM(corr(meanU));
+     corrNoise = repmat(corrN,1,nDataset*(nDataset-1)/2);
+end
+function [U,RDM,cRDM,G,cG] = getFirstLevel(Data,nPart,nCond)
+
+numLayer = size(Data,1);
+partVec = kron((1:nPart)',ones(nCond,1));          
+condVec = kron(ones(nPart,1),(1:nCond)');
+% initialize
+G = cell(numLayer,1);
+cG = G;
+% contrast matrix for G->distances
+C = indicatorMatrix('allpairs',1:nCond);
+X = indicatorMatrix('identity_p',condVec);
+%H = eye(nCond)-ones(nCond)./nCond; 
+RDM = zeros(numLayer,size(C,1));
+cRDM = RDM;
+U = zeros(numLayer,nCond);
+for i=1:numLayer
+    nVox = size(Data{i},2);
+    % calculate mean activation 
+    t=Data{i};
+    for j=1:nPart % first remove the mean of each run
+        t(partVec==j,:)=bsxfun(@minus,Data{i}(partVec==j,:),mean(Data{i}(partVec==j,:),1));
+    end
+    D           = pinv(X)*Data{i};
+    G{i}        = D*D'/nVox;
+    % G{i} = H*G{i}*H';
+    G{i}        = G{i}./trace(G{i});
+    RDM(i,:)    = diag(C*G{i}*C')';
+    D           = pinv(X)*t;
+    U(i,:)      = mean(D,2)';
+    %cRDM(i,:)   = rsa.distanceLDC(Data{i},partVec,condVec); % equivalent as below
+    cG{i}       = pcm_estGCrossval(Data{i},partVec,condVec);
+    % cG{i} = H*cG{i}*H';
+    cG{i}       = cG{i}./trace(cG{i});
+    cRDM(i,:)   = diag(C*cG{i}*C')';  
+end
+end
+function R2_dist = anzellottiDist(data,nPart,nCond)
+% function dist = anzellottiDist(data,partVec,condVec)
+% calculates a relationship between data of different regions
+% for now the distance output is 1-R2 
+nData   = size(data,1);
+partVec = kron((1:nPart)',ones(nCond,1));          
+condVec = kron(ones(nPart,1),(1:nCond)');
+ind     = indicatorMatrix('allpairs',1:nData);
+dist    = zeros(size(ind,1),1);
+for i=1:size(ind,1)
+    ind1 = find(ind(i,:)==1);
+    ind2 = find(ind(i,:)==-1);
+    dist(i) = multiDependVox(data{ind2},data{ind1},partVec,condVec,'type','reduceAB');
+end
+R2_dist=rsa_squareRDM(dist');
 end
