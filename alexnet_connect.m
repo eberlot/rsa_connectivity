@@ -42,7 +42,7 @@ dType = {'univariate','multivariate'};
 mColor={[84 13 100]/255,[238 66 102]/255,[14 173 105]/255,[59 206 172]/255,[255 210 63]/255,[78 164 220]/255,[176 0 35]/255,[170 170 170]/255};
 
 % ----------------------- main file to consider --------------------------
-actUse = 'shuffled_subsets'; % here change random, correct or other options
+actUse = 'correctOrd_subsets'; % here change random, correct or other options
 order = correctOrder;
 if strcmp(actUse,'correct') % choose the ordering
     act = activations_correct;
@@ -935,7 +935,7 @@ switch what
         % here estimate topology for different alpha metrics - univariate /
         % multivariate
         % some parameters
-        n_dim   = 1; % number of dimensions to consider
+        n_dim   = 2; % number of dimensions to consider
         n_neigh = 2; % number of neighbours to consider
         vararginoptions(varargin,{'n_dim','n_neigh'});
         dataType = {'univariate','multivariate'};
@@ -954,11 +954,11 @@ switch what
                 W = full(mp.D);
                 [r,c,val] = find(W);
                 val = val./max(val); % renormalize
-             %   for i=1:length(r)
-             %       plot([mX(r(i),1),mX(c(i),1)],[mX(r(i),2),mX(c(i),2)],'LineWidth',(1/val(i)),'Color',repmat(val(i),3,1)./(max(val)+0.1));
-             %   end
-               % scatterplot(mX(:,1),mX(:,2),'label',(1:8),'split',(1:8)','markercolor',mColor,'markertype','.','markersize',40);
-               scatterplot((1:8)',mX(:,1),'label',(1:8),'split',(1:8)','markercolor',mColor,'markertype','.','markersize',40); 
+                for i=1:length(r)
+                    plot([mX(r(i),1),mX(c(i),1)],[mX(r(i),2),mX(c(i),2)],'LineWidth',(1/val(i)),'Color',repmat(val(i),3,1)./(max(val)+0.1));
+                end
+                scatterplot(mX(:,1),mX(:,2),'label',(1:8),'split',(1:8)','markercolor',mColor,'markertype','.','markersize',40);
+              % scatterplot((1:8)',mX(:,1),'label',(1:8),'split',(1:8)','markercolor',mColor,'markertype','.','markersize',40); 
                title(sprintf('%s - %s',dataType{d},aType{m}));
                indx=indx+1;
             end
@@ -980,11 +980,11 @@ switch what
             hold on;
             W = full(mp.D);
             [r,c,val] = find(W);
-            %   for i=1:length(r)
-            %       plot([mX(r(i),1),mX(c(i),1)],[mX(r(i),2),mX(c(i),2)],'LineWidth',(1/val(i)),'Color',repmat(val(i),3,1)./(max(val)+0.05));
-            %   end
-            %  scatterplot(mX(:,1),mX(:,2),'label',(1:8),'split',(1:8)','markercolor',mColor,'markertype','.','markersize',40);
-            scatterplot((randOrder)',mX(:,1),'label',(randOrder),'split',(1:8)','markercolor',mColor,'markertype','.','markersize',40);
+               for i=1:length(r)
+                   plot([mX(r(i),1),mX(c(i),1)],[mX(r(i),2),mX(c(i),2)],'LineWidth',(1/val(i)),'Color',repmat(val(i),3,1)./(max(val)+0.05));
+               end
+              scatterplot(mX(:,1),mX(:,2),'label',(1:8),'split',(1:8)','markercolor',mColor,'markertype','.','markersize',40);
+           % scatterplot(mX(:,1),ones(8,1),'label',(order),'split',(1:8)','markercolor',mColor,'markertype','.','markersize',40);
             title(metrics{m});
         end
     case 'topology_firstLevel'
@@ -1217,11 +1217,16 @@ switch what
         % use the normalized activation units here
         nSim        = 100; % number of simulations
         nUnits      = 500; % number of units to sample at a time
-        nDim        = 1;
+        nDim        = 2;
         nNeigh      = 2;
         dirMetrics  = {'scaleDist','diagDist','diagRange','eigStd'}; % directional metrics to consider
         vararginoptions(varargin,{'nSim','nUnits','nDim','nNeigh'});
         
+        if ~strcmp(actUse,'correct') % make sure the correct activations are loaded
+            load(fullfile(baseDir,'imageActivations_alexNet_4Eva'),'activations_correct');
+            act = activations_correct;
+            clear activations_correct;
+        end
         dataType    = [1 1 2 2 repmat(3,1,length(dirMetrics))]; % uni / multi / directional
         metricType  = [1 2 1 2 3:2+length(dirMetrics)]; % corr / cos / scaleDist...
         VV = [];
@@ -1280,11 +1285,16 @@ switch what
         % validate topology in the noiseless case by subsampling conditions
         nSim        = 100; % number of simulations
         nCond       = 50;  % number of conditions to sample at a time
-        nDim        = 1;
+        nDim        = 2;
         nNeigh      = 2;
         dirMetrics  = {'scaleDist','diagDist','diagRange','eigStd'}; % directional metrics to consider
         vararginoptions(varargin,{'nSim','nUnits','nDim','nNeigh'});
         
+        if ~strcmp(actUse,'correct') % make sure the correct activations are loaded
+            load(fullfile(baseDir,'imageActivations_alexNet_4Eva'),'activations_correct');
+            act = activations_correct;
+            clear activations_correct;
+        end
         dataType    = [1 1 2 2 repmat(3,1,length(dirMetrics))]; % uni / multi / directional
         metricType  = [1 2 1 2 3:2+length(dirMetrics)]; % corr / cos / scaleDist...
         VV = [];
@@ -1401,7 +1411,7 @@ switch what
         vararginoptions(varargin,{'nPart','nSim','noiseType','dataType'});
         
         % initialize
-        n_dim       = 1; % number of dimensions to consider
+        n_dim       = 2; % number of dimensions to consider
         n_neigh     = 2; % number of neighbours to consider
         dataInd     = [1 1 2 2 3 3 4 4 4 4 5 5 5 5 6]; % anzelotti as 6
         alphaInd    = [1 2 1 2 1 2 3 4 5 6 3 4 5 6 7];
@@ -1413,16 +1423,17 @@ switch what
                 act = actN;
             case 'shuffled_subsets'
                 load(fullfile(baseDir,'imageAct_subsets_normalized_shuffled'));
+                order=randOrder;
             case 'correctOrd_subsets'
                 load(fullfile(baseDir,'imageAct_subsets_normalized'));
                 act = actN;
         end
         switch noiseType
             case 'allEqual'
-                varReg = [0.001,0.01,0.1,1,5];
+                varReg = [0.01,0.1,0.5,2,5,10];
                 corrReg = 0:0.2:0.8;
             case 'neighbours'
-                varReg = [0.001,0.01,0.1,1,5];
+                varReg = [0.01,0.1,0.5,2,5,10];
                 corrReg = 1;
         end
         % here repeat the true pattern for each partition
@@ -1483,7 +1494,8 @@ switch what
     case 'plot_noise'
         noiseType   = 'allEqual'; % allEqual or neighbours
         dataType    = 'correctOrd_subsets'; % correctOrd or shuffled
-        vararginoptions(varargin,{'noiseType','dataType'});
+        metric      = 'absCorr'; % absCorr or relCorr
+        vararginoptions(varargin,{'noiseType','dataType','metric'});
         
         T = load(fullfile(baseDir,sprintf('simulations_noise_%s_%s',noiseType,dataType)));
         numSim = max(T.numSim);
@@ -1504,22 +1516,55 @@ switch what
                 end
             end
         end
-        
         figure
-        subplot(221)
-        barplot(DD.dataType,DD.absCorr,'split',DD.metricType,'subset',DD.varReg==0.001&DD.corrReg==1);
-        hold on; drawline(numSim,'dir','horz','linestyle','--');
-        subplot(222)
-        barplot(DD.dataType,DD.absCorr,'split',DD.metricType,'subset',DD.varReg==0.01&DD.corrReg==1);
-        hold on; drawline(numSim,'dir','horz','linestyle','--');
-        subplot(223)
-        barplot(DD.dataType,DD.absCorr,'split',DD.metricType,'subset',DD.varReg==0.1&DD.corrReg==1);
-        hold on; drawline(numSim,'dir','horz','linestyle','--');
-        subplot(224)
-        barplot(DD.dataType,DD.absCorr,'split',DD.metricType,'subset',DD.varReg==5&DD.corrReg==1);
-     %   barplot(DD.dataType,DD.absCorr,'split',DD.metricType,'subset',DD.varReg==1&DD.corrReg==0.8);
-        hold on; drawline(numSim,'dir','horz','linestyle','--');
+        varR = unique(DD.varReg)';
+        corrR = unique(DD.corrReg)';
+        idx=1;
+        for v = varR
+            for r = corrR
+            %    t = getrow(DD,DD.varReg==v & DD.corrReg==r)
+                subplot(length(varR),length(corrR),idx)
+                barplot(DD.dataType,DD.(metric),'split',DD.metricType,'subset',DD.varReg==v & DD.corrReg==r);
+                idx = idx+1;
+                ylabel('correct');
+                title(sprintf('variance %1.3f - correlation %1.1f',v,r));
+            end
+        end
+    case 'plot_noise_neighbours'
+        noiseType   = 'neighbours'; % allEqual or neighbours
+        dataType    = 'correctOrd_subsets'; % correctOrd or shuffled
+        metric      = 'absCorr'; % absCorr or relCorr
+        vararginoptions(varargin,{'noiseType','dataType','metric'});
         
+        T = load(fullfile(baseDir,sprintf('simulations_noise_%s_%s',noiseType,dataType)));
+        numSim = max(T.numSim);
+        DD=[];
+        for v=unique(T.varReg)'
+            for c=unique(T.corrReg)'
+                for d=1:max(T.dataType)
+                    G = getrow(T,T.dataType==d & T.corrReg==c & T.varReg==v);
+                    for m=unique(G.metricType)'
+                        D.absCorr = sum(G.correct(G.metricType==m&~isnan(G.correct)));
+                        D.relCorr = sum(G.accu(G.metricType==m&~isnan(G.accu)))/length(G.accu(G.metricType==m));
+                        D.dataType = d;
+                        D.metricType = m;
+                        D.corrReg = c;
+                        D.varReg = v;
+                        DD = addstruct(DD,D);
+                    end
+                end
+            end
+        end
+        varR = unique(DD.varReg)';
+        idx=1;
+        figure
+        for i=varR
+            subplot(1,length(varR),idx)
+            barplot(DD.dataType,DD.(metric),'split',DD.metricType,'subset',DD.varReg==i);
+            ylabel('correct');
+            title(sprintf('variance %1.3f',i));
+            idx=idx+1;
+        end
         
     case 'HOUSEKEEPING:correctOrder'
         % reorder activation units
@@ -1580,17 +1625,17 @@ switch what
         load(fullfile(baseDir,'imageAct_subsets_normalized'));
         act = cell(numLayer,1);
         for i=1:numLayer % use the random order provided initially
-            act{i} = actN{randOrder(i)};
+            act{randOrder(i)} = actN{i};
         end
         save(fullfile(baseDir,'imageAct_subsets_normalized_shuffled'),'act');
     
     case 'run_job'
-       % alexnet_connect('validate_noiseless_subsetUnit');
-       % alexnet_connect('validate_noiseless_subsetCond');
+      %  alexnet_connect('validate_noiseless_subsetUnit');
+      %  alexnet_connect('validate_noiseless_subsetCond');
        % alexnet_connect('simulate_noise');
         alexnet_connect('simulate_noise','dataType','shuffled_subsets');
         fprintf('Done shuffled!\n\n\n\n\n');
-        alexnet_connect('simulate_noise','noiseType','allEqual');
+      %  alexnet_connect('simulate_noise','noiseType','allEqual');
 
     
     otherwise
@@ -1646,28 +1691,6 @@ function [data,corrNoise]   = addSharedNoise(data,Var,r,noiseType)
             P           = squareform(noiseKernel);
             %   Zn          = Z*real(sqrtm(P));
             Zn          = Z*P;
-%             sNoise = zeros(nTrials,nDataset);
-%             for i=1:nDataset
-%                 nStep = abs(ind-i); % how many steps away
-%                 Z = normrnd(0,1,nTrials,1);
-%                 Z = Z./max(Z);
-%                 kernel = exp(-.5*nStep/kernelWidth);
-%                 Z_all = bsxfun(@times,Z,kernel);
-%                 sNoise = sNoise + Z_all;
-%             end
-%             sNoise = sNoise./max(max(sNoise)); %imagesc(corr(sNoise))
-%             Y_noise = zeros(nTrials,nDataset);
-%             % add all sources of noise
-%             for i=1:nDataset
-%                 % region specific noise N
-%                 N = normrnd(0,1,nTrials,size(data{i},2));
-%                % N = normrnd(0,1,nTrials,100);
-%                 N = N./max(max(N));
-%                 N = bsxfun(@plus,N*(1-r),sNoise(:,i).*r); % scale the random noise and add shared noise
-%                 data{i} = data{i} + Var.*N;
-%                 Y_noise(:,i)=nanmean(N,2);
-%             end
-%             corrNoise = rsa_vectorizeRDM(corr(Y_nosie));
     end
     Zn = Zn./max(max(Zn));
     for i=1:nDataset
