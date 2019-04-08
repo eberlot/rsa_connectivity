@@ -364,6 +364,7 @@ switch what
         end
 
         [T,predG,corT,~,~]=calcTransformG(G{1},G{2});  
+        % G{2}=nearestSPD(G{2});
         figure
         subplot(321)
         imagesc(D{1}); colorbar;
@@ -437,7 +438,6 @@ switch what
         end
         %G_pred = U1*T*U1';
 
-        
         % now make a new G1 (leaving U as is)
         U1_new=bsxfun(@times,U1,[2 1.5 1.3 1 0.5]);
         G1_new=U1_new*U1_new';
@@ -540,7 +540,40 @@ switch what
         imagesc(T);
         title('T - G1->G2');
         
+    case 'rotation'
+        nCond = 5;
+        nVox = 100;
+        nReg = 2;
+        % create two random G matrices
+        for i=1:nReg
+            U = randn(nCond,nVox);
+            G{i} = U*U'/nVox;
+            G{i} = G{i}./trace(G{i});
+        end
         
+        % decompose G1 - eigenvalue decomposition
+        % G1
+        [V1,L1]     = eig(G{1});
+        [l,i]       = sort(diag(L1),1,'descend'); % sort the eigenvalues
+        V1          = V1(:,i);
+        U1          = bsxfun(@times,V1,real(sqrt(l')));
+        % here swap the order
+        order = [3,2,4,5,1];
+        Vs1         = V1(:,order);
+        Us1         = bsxfun(@times,Vs1,real(sqrt(l(order,:)')));
+        % G2
+        [V2,L2]     = eig(G{2});
+        [l,i]       = sort(diag(L2),1,'descend');
+        V2          = V2(:,i);
+        U2          = bsxfun(@times,V2,real(sqrt(l')));
+        
+        % transformation matrix T - A*A'
+        A = pinv(U1)*U2;
+        T = A*A';
+        As = pinv(Us1)*U2;
+        Ts = As*As';
+        keyboard;
+        %sum(eig(Ts))^2/(sum(eig(Ts).^2))
         
     otherwise
         fprintf('No such case!')

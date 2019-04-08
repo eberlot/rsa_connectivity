@@ -42,7 +42,7 @@ dType = {'univariate','multivariate'};
 mColor={[84 13 100]/255,[238 66 102]/255,[14 173 105]/255,[59 206 172]/255,[255 210 63]/255,[78 164 220]/255,[176 0 35]/255,[170 170 170]/255};
 
 % ----------------------- main file to consider --------------------------
-actUse = 'correctOrd_subsets'; % here change random, correct or other options
+actUse = 'correct'; % here change random, correct or other options
 order = correctOrder;
 if strcmp(actUse,'correct') % choose the ordering
     act = activations_correct;
@@ -171,7 +171,40 @@ switch what
         alexnet_connect('plot_metrics_dir',D3); % add the new ones - diag-offdiag, range vs. scalar
         keyboard;
         %%
-    
+    case 'G_metrics'
+       load(fullfile(baseDir,sprintf('alexnet_%s_G',actUse)));
+       TT=[];
+       for i1=1:numLayer % all pairs (because T is not symmetric)
+            for i2=1:numLayer
+                T.l1=i1;
+                T.l2=i2;
+                [Tr,predG,~,corDist]    = calcTransformG(G{T.l1},G{T.l2}); % can retrieve cosine distance
+                T.T                     = rsa_vectorizeIPMfull(round(Tr,3));
+                T.predG                 = rsa_vectorizeIPMfull(predG);
+                T.corDist               = corDist;
+                T.eigT                  = eig(Tr)';
+                T.diagT                 = sort(diag(Tr))';
+                T.eigSum                = sum(T.eigT)^2/(sum(T.eigT.^2));
+                TT=addstruct(TT,T);
+            end
+        end
+       keyboard;
+       for i1=1:numLayer
+           nPair = 1:numLayer; nPair = nPair(~ismember(nPair,i1));
+           figure(i1)
+           for i2=nPair
+               subplot(2,numLayer,i2); hold on;
+               plot(1:92,TT.eigT(TT.l1==i1 & TT.l2==i2,:),'.','Color',mColor{i2});
+               plt.match('y');
+               title(sprintf('%d-%d, eigM:%2.1f, eigR:%2.1f',i1,i2,TT.eigSum(TT.l1==i1&TT.l2==i2),range(TT.eigT(TT.l1==i1 & TT.l2==i2,:))))
+               ylabel(sprintf('eigStd:%2.1f',std(TT.eigT(TT.l1==i1 & TT.l2==i2,:))));
+               subplot(2,numLayer,i2+numLayer);
+               plot(1:92,TT.diagT(TT.l1==i1 & TT.l2==i2,:),'.','Color',mColor{i2});
+               title(sprintf('%d-%d, diagR: %2.1f',i1,i2,range(TT.diagT(TT.l1==i1 & TT.l2==i2,:))))
+               ylabel(sprintf('diagStd:%2.1f',std(TT.diagT(TT.l1==i1 & TT.l2==i2,:))));
+           end
+       end
+       
     case 'estimate_firstLevel'
         %% estimate metrics on first level (i.e. *per* layer)
         % - G matrices per layer
@@ -198,10 +231,13 @@ switch what
             act = varargin{1};
             nLayer = size(act,1);
             G = cell(nLayer,1);
+            nStim = size(act{1},1);
+            H = eye(nStim)-ones(nStim)./nStim; 
             for i=1:nLayer
                 nVox = size(act{i},2);
                 G{i} = act{i}*act{i}'/nVox;
-                G{i} = G{i}./trace(G{i}); % here also double center first?
+                G{i} = H*G{i}*H';
+              %  G{i} = G{i}./trace(G{i}); % here also double center first?
             end
             varargout{1}=vout(G);
         case 'estimateRDM'
@@ -244,6 +280,7 @@ switch what
             act = varargin{1};
             G = cell(numLayer,1);
             nCond = size(act{1},1);
+            H = eye(nCond)-ones(nCond)./nCond; 
             % contrast matrix for G->distances
             C = indicatorMatrix('allpairs',1:nCond);
             RDM = zeros(numLayer,size(C,1));
@@ -251,7 +288,8 @@ switch what
             for i=1:numLayer
                 nVox = size(act{i},2);
                 G{i} = act{i}*act{i}'/nVox;
-                G{i} = G{i}./trace(G{i});
+                G{i} = H*G{i}*H';
+              %  G{i} = G{i}./trace(G{i});
                 RDM(i,:) = diag(C*G{i}*C')';
                 t=bsxfun(@minus,act{i},mean(act{i},1));  %  remove the mean activation
                 U(i,:)=mean(t,2)';
@@ -372,9 +410,9 @@ switch what
             figOn=varargin{3};
             [T.scalar,T.scaleFit,T.scaleDist]   = alexnet_connect('scaleT',T,G); 
             [T.diagFit,T.diagDist]              = alexnet_connect('diagT',T,G); 
-            T.diagRange                         = alexnet_connect('diagRange',T);
+            [T.diagRange,T.diagStd]             = alexnet_connect('diagRange',T);
         %    T.rank                              = alexnet_connect('rank',T);
-            [T.eig,T.eigStd]                    = alexnet_connect('eigenvalues',T);
+            [T.eig,T.eigRange,T.eigStd]         = alexnet_connect('eigenvalues',T);
          %   [T.dimFit,T.dimDist,T.dimension]    = alexnet_connect('dimensionT',T,G,figOn);
             varargout{1} = T; % output - added fields characterize T
         case 'scaleT'
@@ -416,7 +454,9 @@ switch what
             nStim           = size(rsa_squareIPMfull(T.T(1,:)),1);
             diagElement     = T.T(:,1:nStim+1:end);
             diagRange       = max(diagElement,[],2)-min(diagElement,[],2);
+            diagStd         = std(diagElement,[],2);
             varargout{1}    = diagRange;
+            varargout{2}    = diagStd;
         case 'rank'
             % calculate the rank of each transformation matrix
             T=varargin{1};
@@ -433,13 +473,16 @@ switch what
             nPair   = size(T.T,1);
             eigT    = zeros(nPair,size(rsa_squareIPMfull(T.T(1,:)),1));
             eigStd  = zeros(nPair,1);
+            eigRange = eigStd;
             for i=1:nPair
                 Tr = rsa_squareIPMfull(T.T(i,:));
                 eigT(i,:)   = eig(Tr)';
+                eigRange(i) = max(eigT(i,:))-min(eigT(i,:));
                 eigStd(i)   = std(eigT(i,:));
             end
             varargout{1}=eigT;
-            varargout{2}=eigStd;
+            varargout{2}=eigRange;
+            varargout{3}=eigStd;
         case 'dimensionT'
             % dimensionality of T, and fits of predG with different dim num
             T       = varargin{1};
@@ -523,15 +566,17 @@ switch what
                     % diagonal + range
                     diagTr                  = Tr.*eye(size(Tr));
                     [~,~,T.diagDist]        = predictGfromTransform(G{T.l1},diagTr,'G2',G{T.l2});
-                    diagTr                  = diag(Tr);
-                    T.diagRange             = max(diagTr)-min(diag(Tr));
+                    T.diagRange             = max(diag(Tr))-min(diag(Tr));
+                    T.diagStd               = std(diag(Tr));
                     % eigenvalues
                     eigT                    = eig(Tr)';
+                    T.eigRange              = max(eigT)-min(eigT);
                     T.eigStd                = std(eigT);
                     TT=addstruct(TT,T);
                 end
             end
     varargout{1}=TT;
+   
     case 'layer_order_undirected'
         %% estimate the order between layers for a given metric (undirected)
         alpha   = varargin{1};
@@ -965,12 +1010,12 @@ switch what
         end
     case 'topology_directed'
         % estimate topology for directional metrics
-        n_dim   = 1; % number of dimensions to consider
+        n_dim   = 2; % number of dimensions to consider
         n_neigh = 2; % number of neighbours to consider
         vararginoptions(varargin,{'n_dim','n_neigh'});
         a = load(fullfile(baseDir,sprintf('alexnet_%s_alpha',actUse)),'alpha');
         A = a.alpha{3};
-        metrics={'scaleDist','diagRange','eigStd'};
+        metrics={'scaleDist','diagRange','diagStd','eigRange','eigStd'};
         figure
         for m = 1:length(metrics)
             t = rsa_squareIPMfull(A.(metrics{m})'); % t+t' to make it undirected
@@ -1110,6 +1155,58 @@ switch what
             title(metrics{m});
         end
      
+    case 'tau_directed'
+        % estimate order for directional metrics
+        % similar as topology, but without isomap
+        n_neigh = 2; % number of neighbours to consider
+        vararginoptions(varargin,{'n_neigh'});
+        load(fullfile(baseDir,'trueOrder'));
+        a = load(fullfile(baseDir,sprintf('alexnet_%s_alpha',actUse)),'alpha');
+        A = a.alpha{3};
+        metrics={'scaleDist','diagRange','diagStd','eigRange','eigStd'};
+        TT=[];
+        figure
+        for m = 1:length(metrics)
+            t = rsa_squareIPMfull(A.(metrics{m})'); % t+t' to make it undirected
+            D = t+t';
+            N = create_neighbourhood(D,n_neigh);
+            T.tau = corr(rsa_vectorizeRDM(N)',rsa_vectorizeRDM(trueOrd)','Type','Kendall');
+            T.metric = m;
+            TT=addstruct(TT,T);
+            subplot(5,3,(m-1)*3+1)
+            imagesc(D); title(sprintf('%s',metrics{m}));
+            subplot(5,3,(m-1)*3+2)
+            imagesc(N); title(sprintf('closest neighbours - tau: %1.1f',T.tau));
+            subplot(5,3,(m-1)*3+3)
+            imagesc(trueOrd); title('true neighbours');
+        end
+        colormap hot;
+    case 'tau_alpha'
+        n_neigh = 2; % number of neighbours to consider
+        vararginoptions(varargin,{'n_dim','n_neigh'});
+        load(fullfile(baseDir,'trueOrder'));
+        a = load(fullfile(baseDir,sprintf('alexnet_%s_alpha',actUse)),'alpha');
+        A = a.alpha;
+        figure; indx=1; TT=[];
+        for d = 1:2 % univariate or multivariate
+            for m = 1:2 % cosine or correlation
+                % test on multi-cosine distance
+                D = rsa_squareRDM(A{d}.dist(A{d}.distType==m)');
+                N = create_neighbourhood(D,n_neigh);
+                T.tau = corr(rsa_vectorizeRDM(N)',rsa_vectorizeRDM(trueOrd)','Type','Kendall');
+                T.metric = m;
+                TT=addstruct(TT,T);
+                subplot(4,3,(indx-1)*3+1)
+                imagesc(D); title(sprintf('%s-%s',dType{d},aType{m}));
+                subplot(4,3,(indx-1)*3+2)
+                imagesc(N); title(sprintf('closest neighbours - tau: %1.1f',T.tau));
+                subplot(4,3,(indx-1)*3+3)
+                imagesc(trueOrd); title('true neighbours');
+                indx = indx+1;
+            end
+        end
+        colormap hot;
+    
     case 'allUnits_activation'
         % here determine the activation profile, similarity matrix of
         % all units (well, subset - 500 per layer)
@@ -1212,10 +1309,10 @@ switch what
             end
         end
             
-    case 'validate_noiseless_subsetUnit'
+    case 'validate_isomap_noiseless_subsetUnit'
         % validate topology in the noiseless case by subsampling units
         % use the normalized activation units here
-        nSim        = 100; % number of simulations
+        nSim        = 50; % number of simulations
         nUnits      = 500; % number of units to sample at a time
         nDim        = 2;
         nNeigh      = 2;
@@ -1280,10 +1377,10 @@ switch what
             toc(tStart);
         end
         % save here
-        save(fullfile(baseDir,'validate_noiseless_subsetUnits'),'-struct','VV');
-    case 'validate_noiseless_subsetCond'
+        save(fullfile(baseDir,'validate_isomap_noiseless_subsetUnits'),'-struct','VV');
+    case 'validate_isomap_noiseless_subsetCond'
         % validate topology in the noiseless case by subsampling conditions
-        nSim        = 100; % number of simulations
+        nSim        = 50; % number of simulations
         nCond       = 50;  % number of conditions to sample at a time
         nDim        = 2;
         nNeigh      = 2;
@@ -1347,9 +1444,9 @@ switch what
             toc(tStart);
         end
         % save here
-        save(fullfile(baseDir,'validate_noiseless_subsetCond'),'-struct','VV');
+        save(fullfile(baseDir,'validate_isomap_noiseless_subsetCond'),'-struct','VV');
     case 'plot_validate_noiseless_unit' 
-        T = load(fullfile(baseDir,'validate_noiseless_subsetUnits'));
+        T = load(fullfile(baseDir,'validate_isomap_noiseless_subsetUnits'));
         tickLab = {'uni-corr','uni-cos','multi-corr','multi-cos','G-scaleDist','G-diagDist','G-diagRange','G-eigStd'};
         DD=[];
         for d=1:max(T.dataType)
@@ -1376,7 +1473,7 @@ switch what
         title('Number of correctly determined layers in order');
         ylabel('Average N');
     case 'plot_validate_noiseless_cond'
-        T = load(fullfile(baseDir,'validate_noiseless_subsetCond'));
+        T = load(fullfile(baseDir,'validate_isomap_noiseless_subsetCond'));
         tickLab = {'uni-corr','uni-cos','multi-corr','multi-cos','G-scaleDist','G-diagDist','G-diagRange','G-eigStd'};
         DD=[];
         for d=1:max(T.dataType)
@@ -1402,8 +1499,7 @@ switch what
         set(gca,'XTickLabel',tickLab);
         title('Number of correctly determined layers in order');
         ylabel('Average N');
-    
-    case 'simulate_noise'
+    case 'simulate_noise_isomap'
         nPart       = 8;
         nSim        = 25;
         noiseType   = 'neighbours'; % allEqual or neighbours
@@ -1565,7 +1661,201 @@ switch what
             title(sprintf('variance %1.3f',i));
             idx=idx+1;
         end
+   
+    case 'validate_noiseless_subsetUnit'
+       % validate topology in the noiseless case by subsampling units
+        % use the normalized activation units here
+        nSim        = 50; % number of simulations
+        nUnits      = 500; % number of units to sample at a time
+        nNeigh      = 2;
+        dirMetrics  = {'scaleDist','diagDist','diagRange','diagStd','eigRange','eigStd'}; % directional metrics to consider
+        vararginoptions(varargin,{'nSim','nUnits','nDim','nNeigh'});
+        load(fullfile(baseDir,'trueOrder'));
+
+        if ~strcmp(actUse,'correct') % make sure the correct activations are loaded
+            load(fullfile(baseDir,'imageActivations_alexNet_4Eva'),'activations_correct');
+            act = activations_correct;
+            clear activations_correct;
+        end
+        dataType    = [1 1 2 2 repmat(3,1,length(dirMetrics))]; % uni / multi / directional
+        metricType  = [1 2 1 2 3:2+length(dirMetrics)]; % corr / cos / scaleDist...
+        VV = [];
+        for n=1:nSim % simulations
+            tStart=tic;
+            act_subsets = cell(numLayer,1);
+            for i=1:numLayer
+                rUnits = randperm(size(act{i},2)); % randomise the order of units
+                act_subsets{i} = act{i}(:,rUnits(1:nUnits));
+            end
+            %% 1) here estimate first level
+            [U,RDM,~,G,~]=getFirstLevel(act_subsets,1,size(act{1},1)); % order: uni, RDM, cRDM, G, cG            
+            %% 2) estimate second level metrics (between RDMs, Gs)
+            % 2a) calculate distance based on mean activity (univariate)
+            A{1} = alexnet_connect('estimate_distance',U,0,'univariate'); % 0 for no figure
+            % 2b) calculate distance between RDMs (cosine, correlation)
+            A{2} = alexnet_connect('estimate_distance',RDM,0,'RDM');
+            % 2c) calculate transformation matrices T between Gs
+            A{3} = alexnet_connect('T_doAll',G);
+            %% 3) estimate topology - neighbourhood, then relate to true order
+            for m = 1:length(metricType)
+                d = dataType(m);
+                if d<3 % uni / multivariate - corr / cos
+                    D = rsa_squareRDM(A{d}.dist(A{d}.distType==metricType(m))');
+                else % directional
+                    t = rsa_squareIPMfull(A{d}.(dirMetrics{m-4})');
+                    D = t+t'; % make it symmetric
+                end
+                % assess the order
+                N = create_neighbourhood(D,nNeigh);
+                V.tau = corr(rsa_vectorizeRDM(N)',rsa_vectorizeRDM(trueOrd)','Type','Kendall');
+                V.metric = m;
+                V.dataType  = d; % uni / multi / directional
+                V.metricType = metricType(m); % corr / cos / eigStd ...
+                V.numSim = n;
+                VV=addstruct(VV,V);
+            end
+            fprintf('\n%d. simulation done...',n);
+            toc(tStart);
+        end
+        % save here
+        save(fullfile(baseDir,'validate_noiseless_subsetUnits'),'-struct','VV'); 
+    case 'validate_noiseless_subsetCond'
+        % validate topology in the noiseless case by subsampling units
+        % use the normalized activation units here
+        nSim        = 50; % number of simulations
+        nCond       = 50;  % number of conditions to sample at a time
+        nNeigh      = 2;
+        dirMetrics  = {'scaleDist','diagDist','diagRange','diagStd','eigRange','eigStd'}; % directional metrics to consider
+        vararginoptions(varargin,{'nSim','nUnits','nDim','nNeigh'});
+        load(fullfile(baseDir,'trueOrder'));
+
+        if ~strcmp(actUse,'correct') % make sure the correct activations are loaded
+            load(fullfile(baseDir,'imageActivations_alexNet_4Eva'),'activations_correct');
+            act = activations_correct;
+            clear activations_correct;
+        end
+        dataType    = [1 1 2 2 repmat(3,1,length(dirMetrics))]; % uni / multi / directional
+        metricType  = [1 2 1 2 3:2+length(dirMetrics)]; % corr / cos / scaleDist...
+        VV = [];
+        for n=1:nSim % simulations
+            tStart=tic;
+            act_subsets = cell(numLayer,1);
+            rCond = randperm(size(act{1},1)); % randomise the conditions
+            for i=1:numLayer
+                act_subsets{i} = act{i}(rCond(1:nCond),:);
+            end
+            %% 1) here estimate first level
+            [U,RDM,~,G,~]=getFirstLevel(act_subsets,1,size(act{1},1)); % order: uni, RDM, cRDM, G, cG            
+            %% 2) estimate second level metrics (between RDMs, Gs)
+            % 2a) calculate distance based on mean activity (univariate)
+            A{1} = alexnet_connect('estimate_distance',U,0,'univariate'); % 0 for no figure
+            % 2b) calculate distance between RDMs (cosine, correlation)
+            A{2} = alexnet_connect('estimate_distance',RDM,0,'RDM');
+            % 2c) calculate transformation matrices T between Gs
+            A{3} = alexnet_connect('T_doAll',G);
+            %% 3) estimate topology - neighbourhood, then relate to true order
+            for m = 1:length(metricType)
+                d = dataType(m);
+                if d<3 % uni / multivariate - corr / cos
+                    D = rsa_squareRDM(A{d}.dist(A{d}.distType==metricType(m))');
+                else % directional
+                    t = rsa_squareIPMfull(A{d}.(dirMetrics{m-4})');
+                    D = t+t'; % make it symmetric
+                end
+                % assess the order
+                N = create_neighbourhood(D,nNeigh);
+                V.tau = corr(rsa_vectorizeRDM(N)',rsa_vectorizeRDM(trueOrd)','Type','Kendall');
+                V.metric = m;
+                V.dataType  = d; % uni / multi / directional
+                V.metricType = metricType(m); % corr / cos / eigStd ...
+                V.numSim = n;
+                VV=addstruct(VV,V);
+            end
+            fprintf('\n%d. simulation done...',n);
+            toc(tStart);
+        end
+        % save here
+        save(fullfile(baseDir,'validate_noiseless_subsetCond'),'-struct','VV'); 
+    case 'simulate_noise'
+        nPart       = 8;
+        nSim        = 10;
+        nUnits      = 500;
+        noiseType   = 'within'; % allEqual or neighbours
+        vararginoptions(varargin,{'nPart','nSim','noiseType','dataType'});
         
+        % initialize
+        n_neigh     = 2; % number of neighbours to consider
+        dataInd     = [1 1 2 2 3 3 4 4 4 4 4 4 5 5 5 5 5 5 6]; % anzelotti as 6
+        alphaInd    = [1 2 1 2 1 2 3 4 5 6 7 8 3 4 5 6 7 8 9];
+        dirMetrics  = {'scaleDist','diagDist','diagRange','diagStd','eigRange','eigStd'};
+
+        load(fullfile(baseDir,'imageAct_normalized'));
+        load(fullfile(baseDir,'trueOrder'));
+        act = actN;
+        switch noiseType
+            case 'allEqual'
+                varReg = [0.01,0.1,0.5,2,5,10];
+                corrReg = 0:0.2:0.8;
+            case 'neighbours'
+                varReg = [0.01,0.1,0.5,2,5,10];
+                corrReg = 1;
+            case 'within'
+                varReg = [0.001,0.01,0.1:0.1:1,2:1:10];
+                corrReg = 0;
+        end
+
+        VV=[];
+        for r=corrReg           % correlated noise
+            for v=varReg        % within noise
+                for n=1:nSim    % number of simulations
+                    % first subsample units
+                    act_subsets = cell(numLayer,1);
+                    for i=1:numLayer
+                        rUnits = randperm(size(act{i},2)); % randomise the order of units
+                        act_subsets{i} = act{i}(:,rUnits(1:nUnits));
+                    end
+                    % here repeat the true pattern for each partition
+                    data = cell(numLayer,1);
+                    for i=1:numLayer
+                        data{i} = repmat(act_subsets{i},nPart,1);
+                    end
+                    tElapsed=tic;
+                    Data = addSharedNoise(data,v,r,noiseType);
+                    [fD{1},fD{2},fD{3},fD{4},fD{5}]=getFirstLevel(Data,nPart,size(act{1},1)); % order: uni, RDM, cRDM, G, cG
+                    A{1} = alexnet_connect('T_doAll',fD{4});
+                    A{2} = alexnet_connect('T_doAll',fD{5});
+                    % cycle around all combinations of data / metrics
+                    for i=1:length(dataInd)
+                        if dataInd(i)<4 % undirectional
+                            t=alexnet_connect('calcDist',fD{dataInd(i)},aType{alphaInd(i)});
+                            T = rsa_squareRDM(t.dist');
+                        elseif dataInd(i)>3 && dataInd(i)<6 % directional
+                            t = rsa_squareIPMfull(A{dataInd(i)-3}.(dirMetrics{alphaInd(i)-2})');
+                            T = t+t'; % make the directional matri symmetric
+                        else % Anzellotti
+                            T = anzellottiDist(Data,nPart,size(act{1},1));
+                        end
+                        % assess the order
+                        N = create_neighbourhood(T,n_neigh);
+                        V.tau = corr(rsa_vectorizeRDM(N)',rsa_vectorizeRDM(trueOrd)','Type','Kendall');
+                        V.dataType      = dataInd(i); % uni / multi / directional
+                        V.metricType 	= alphaInd(i); % corr / cos / eigStd ...
+                        V.metricIndex   = i;
+                        V.numSim        = n;
+                        V.corrReg       = r;
+                        V.varReg        = v;
+                        VV=addstruct(VV,V);
+                    end
+                    fprintf('\n%d. ',n);
+                    toc(tElapsed);
+                end
+                fprintf('\nFinished variance %d.\n\n',v);
+            end
+            fprintf('\nFinished correlation %d.\n\n',r);
+        end
+        save(fullfile(baseDir,sprintf('simulations_noise_%s_%s',noiseType,dataType)),'-struct','VV');
+        fprintf('\nDone simulations - %s - %s\n',noiseType,dataType);
+     
     case 'HOUSEKEEPING:correctOrder'
         % reorder activation units
         activations_correct = cell(8,1);
@@ -1579,10 +1869,11 @@ switch what
         % (ROIs) of 500 voxels each
         % to estimate if clustering will recover the correct layers
         % save as new structure
-        nVox = 500; % 500 voxels in each ROI
+        nUnits = 500; % 500 voxels in each ROI
         act_subsets = cell(numLayer,1);
         for i=1:numLayer
-            act_subsets{i} = act{i}(:,sample_wor(1:size(act{i},2),1,nVox));
+            rUnits = randperm(size(act{i},2)); % randomise the order of units
+            act_subsets{i} = act{i}(:,rUnits(1:nUnits));
         end
         save(fullfile(baseDir,'imageAct_subsets'),'act_subsets');
     case 'HOUSEKEEPING:kClusters'
@@ -1630,13 +1921,21 @@ switch what
         save(fullfile(baseDir,'imageAct_subsets_normalized_shuffled'),'act');
     
     case 'run_job'
-      %  alexnet_connect('validate_noiseless_subsetUnit');
-      %  alexnet_connect('validate_noiseless_subsetCond');
-       % alexnet_connect('simulate_noise');
-        alexnet_connect('simulate_noise','dataType','shuffled_subsets');
-        fprintf('Done shuffled!\n\n\n\n\n');
+       % alexnet_connect('run_calcConnect');
+        alexnet_connect('validate_noiseless_subsetUnit');
+        fprintf('Done subsampling units!\n\n\n');
+        alexnet_connect('validate_noiseless_subsetCond');
+        fprintf('Done subsampling conditions!\n\n\n');
+        alexnet_connect('validate_isomap_noiseless_subsetUnit');
+        fprintf('Done subsampling units - with isomap!\n\n\n');
+        alexnet_connect('validate_isomap_noiseless_subsetCond');
+        fprintf('Done subsampling conditions - with isomap!\n\n\n');
+        % alexnet_connect('simulate_noise');
+      %  alexnet_connect('simulate_noise','dataType','shuffled_subsets');
+      %  fprintf('Done shuffled!\n\n\n\n\n');
       %  alexnet_connect('simulate_noise','noiseType','allEqual');
 
+      
     
     otherwise
         fprintf('This case does not exist!');
@@ -1667,6 +1966,8 @@ function [data,corrNoise]   = addSharedNoise(data,Var,r,noiseType)
     Z = normrnd(0,1,nTrials,nDataset*nVox);
     Z = Z./max(max(Z));
     switch noiseType
+        case 'within'
+            Zn = Z;
         case 'allEqual'
             A = eye(nDataset)*Var+(ones(nDataset)-eye(nDataset))*Var*r;
             P = kron(A,eye(nVox));
@@ -1712,6 +2013,7 @@ cG = G;
 % contrast matrix for G->distances
 C = indicatorMatrix('allpairs',1:nCond);
 X = indicatorMatrix('identity_p',condVec);
+H = eye(nCond)-ones(nCond)./nCond; 
 %H = eye(nCond)-ones(nCond)./nCond; 
 RDM = zeros(numLayer,size(C,1));
 cRDM = RDM;
@@ -1725,8 +2027,8 @@ for i=1:numLayer
     end
     D           = pinv(X)*Data{i};
     G{i}        = D*D'/nVox;
-    % G{i} = H*G{i}*H';
-    G{i}        = G{i}./trace(G{i});
+     G{i}       = H*G{i}*H';
+  %  G{i}        = G{i}./trace(G{i});
     RDM(i,:)    = diag(C*G{i}*C')';
     D           = pinv(X)*t;
     U(i,:)      = mean(D,2)';
@@ -1752,4 +2054,17 @@ for i=1:size(ind,1)
     dist(i) = multiDependVox(data{ind2},data{ind1},partVec,condVec,'type','reduceAB');
 end
 R2_dist=rsa_squareRDM(dist');
+end
+function N = create_neighbourhood(D,nNeighbour)
+% function N = create_neighbourhood(D,nNeighbour)
+% this function transforms the given matrix D into a neighbourhood matrix
+% with number of neighbours given as input
+n = nNeighbour;
+nDist = size(D,1);
+[~,ind]=sort(D,2,'ascend');
+indx = ind(:,2:(1+n));
+N = zeros(nDist);
+for i=1:nDist
+    N(i,indx(i,:))=1;
+end
 end
