@@ -1316,7 +1316,7 @@ switch what
         nUnits      = 500; % number of units to sample at a time
         nDim        = 2;
         nNeigh      = 2;
-        dirMetrics  = {'scaleDist','diagDist','diagRange','eigStd'}; % directional metrics to consider
+        dirMetrics  = {'scaleDist','diagDist','diagRange','diagStd','eigRange','eigStd'}; % directional metrics to consider
         vararginoptions(varargin,{'nSim','nUnits','nDim','nNeigh'});
         
         if ~strcmp(actUse,'correct') % make sure the correct activations are loaded
@@ -1384,7 +1384,7 @@ switch what
         nCond       = 50;  % number of conditions to sample at a time
         nDim        = 2;
         nNeigh      = 2;
-        dirMetrics  = {'scaleDist','diagDist','diagRange','eigStd'}; % directional metrics to consider
+        dirMetrics  = {'scaleDist','diagDist','diagRange','diagStd','eigRange','eigStd'}; % directional metrics to consider
         vararginoptions(varargin,{'nSim','nUnits','nDim','nNeigh'});
         
         if ~strcmp(actUse,'correct') % make sure the correct activations are loaded
@@ -1445,9 +1445,9 @@ switch what
         end
         % save here
         save(fullfile(baseDir,'validate_isomap_noiseless_subsetCond'),'-struct','VV');
-    case 'plot_validate_noiseless_unit' 
+    case 'plot_validate_isomap_noiseless_unit' 
         T = load(fullfile(baseDir,'validate_isomap_noiseless_subsetUnits'));
-        tickLab = {'uni-corr','uni-cos','multi-corr','multi-cos','G-scaleDist','G-diagDist','G-diagRange','G-eigStd'};
+        tickLab = {'uni-corr','uni-cos','multi-corr','multi-cos','G-scaleDist','G-diagDist','G-diagRange','G-diagStd','G-eigRange','G-eigStd'};
         DD=[];
         for d=1:max(T.dataType)
             G = getrow(T,T.dataType==d);
@@ -1462,19 +1462,19 @@ switch what
         figure
         subplot(211)
         barplot(DD.dataType,DD.absCorr,'split',DD.metricType);
-        hold on; drawline(100,'dir','horz','linestyle','--');
+        hold on; drawline(max(G.numSim),'dir','horz','linestyle','--');
         set(gca,'XTickLabel',tickLab);
         title('Correctly determined order - subsampling units in layer');
-        ylabel('N (out of 100 simulations)')
+        ylabel(sprintf('N (out of %d simulations)',max(G.numSim)))
         subplot(212)
         barplot(DD.dataType,DD.relCorr,'split',DD.metricType);
         hold on; drawline(1,'dir','horz','linestyle','--');
         set(gca,'XTickLabel',tickLab);
         title('Number of correctly determined layers in order');
         ylabel('Average N');
-    case 'plot_validate_noiseless_cond'
+    case 'plot_validate_isomap_noiseless_cond'
         T = load(fullfile(baseDir,'validate_isomap_noiseless_subsetCond'));
-        tickLab = {'uni-corr','uni-cos','multi-corr','multi-cos','G-scaleDist','G-diagDist','G-diagRange','G-eigStd'};
+        tickLab = {'uni-corr','uni-cos','multi-corr','multi-cos','G-scaleDist','G-diagDist','G-diagRange','G-diagStd','G-eigRange','G-eigStd'};
         DD=[];
         for d=1:max(T.dataType)
             G = getrow(T,T.dataType==d);
@@ -1489,10 +1489,10 @@ switch what
         figure
         subplot(211)
         barplot(DD.dataType,DD.absCorr,'split',DD.metricType);
-        hold on; drawline(100,'dir','horz','linestyle','--');
+        hold on; drawline(max(G.numSim),'dir','horz','linestyle','--');
         set(gca,'XTickLabel',tickLab);
         title('Correctly determined order - subsampling conditions');
-        ylabel('N (out of 100 simulations)')
+        ylabel(sprintf('N (out of %d simulations)',max(G.numSim)))
         subplot(212)
         barplot(DD.dataType,DD.relCorr,'split',DD.metricType);
         hold on; drawline(1,'dir','horz','linestyle','--');
@@ -1665,7 +1665,7 @@ switch what
     case 'validate_noiseless_subsetUnit'
        % validate topology in the noiseless case by subsampling units
         % use the normalized activation units here
-        nSim        = 50; % number of simulations
+        nSim        = 100; % number of simulations
         nUnits      = 500; % number of units to sample at a time
         nNeigh      = 2;
         dirMetrics  = {'scaleDist','diagDist','diagRange','diagStd','eigRange','eigStd'}; % directional metrics to consider
@@ -1688,33 +1688,32 @@ switch what
                 act_subsets{i} = act{i}(:,rUnits(1:nUnits));
             end
             %% 1) here estimate first level
-            [U,RDM,~,G,~]=getFirstLevel(act_subsets,1,size(act{1},1)); % order: uni, RDM, cRDM, G, cG            
+            [fD{1},fD{2},~,fD{3},~]=getFirstLevel(act_subsets,1,size(act{1},1)); % order: uni, RDM, cRDM, G, cG            
             %% 2) estimate second level metrics (between RDMs, Gs)
-            % 2a) calculate distance based on mean activity (univariate)
-            A{1} = alexnet_connect('estimate_distance',U,0,'univariate'); % 0 for no figure
-            % 2b) calculate distance between RDMs (cosine, correlation)
-            A{2} = alexnet_connect('estimate_distance',RDM,0,'RDM');
-            % 2c) calculate transformation matrices T between Gs
-            A{3} = alexnet_connect('T_doAll',G);
+            % calculate transformation matrices T between Gs
+            A = alexnet_connect('T_doAll',fD{3});
             %% 3) estimate topology - neighbourhood, then relate to true order
             for m = 1:length(metricType)
                 d = dataType(m);
                 if d<3 % uni / multivariate - corr / cos
-                    D = rsa_squareRDM(A{d}.dist(A{d}.distType==metricType(m))');
+                    t = alexnet_connect('calcDist',fD{dataType(m)},aType{metricType(m)});
+                    D = rsa_squareRDM(t.dist');
                 else % directional
-                    t = rsa_squareIPMfull(A{d}.(dirMetrics{m-4})');
+                    t = rsa_squareIPMfull(A.(dirMetrics{m-4})');
                     D = t+t'; % make it symmetric
                 end
                 % assess the order
                 N = create_neighbourhood(D,nNeigh);
-                V.tau = corr(rsa_vectorizeRDM(N)',rsa_vectorizeRDM(trueOrd)','Type','Kendall');
-                V.metric = m;
-                V.dataType  = d; % uni / multi / directional
-                V.metricType = metricType(m); % corr / cos / eigStd ...
-                V.numSim = n;
+                t = squareform(pdist(order'));
+                V.tauN          = corr(rsa_vectorizeRDM(N)',rsa_vectorizeRDM(trueOrd)','Type','Kendall'); % of the neighbourhood
+                V.tauAll        = corr(rsa_vectorizeRDM(D)',rsa_vectorizeRDM(t)','Type','Kendall'); % overall - whole distance matrix
+                V.metric        = m;
+                V.dataType      = d; % uni / multi / directional
+                V.metricType    = metricType(m); % corr / cos / eigStd ...
+                V.numSim        = n;
                 VV=addstruct(VV,V);
             end
-            fprintf('\n%d. simulation done...',n);
+            fprintf('%d. simulation done...',n);
             toc(tStart);
         end
         % save here
@@ -1722,7 +1721,7 @@ switch what
     case 'validate_noiseless_subsetCond'
         % validate topology in the noiseless case by subsampling units
         % use the normalized activation units here
-        nSim        = 50; % number of simulations
+        nSim        = 100; % number of simulations
         nCond       = 50;  % number of conditions to sample at a time
         nNeigh      = 2;
         dirMetrics  = {'scaleDist','diagDist','diagRange','diagStd','eigRange','eigStd'}; % directional metrics to consider
@@ -1745,44 +1744,56 @@ switch what
                 act_subsets{i} = act{i}(rCond(1:nCond),:);
             end
             %% 1) here estimate first level
-            [U,RDM,~,G,~]=getFirstLevel(act_subsets,1,size(act{1},1)); % order: uni, RDM, cRDM, G, cG            
+            [fD{1},fD{2},~,fD{3},~]=getFirstLevel(act_subsets,1,size(act_subsets{1},1)); % order: uni, RDM, cRDM, G, cG            
             %% 2) estimate second level metrics (between RDMs, Gs)
-            % 2a) calculate distance based on mean activity (univariate)
-            A{1} = alexnet_connect('estimate_distance',U,0,'univariate'); % 0 for no figure
-            % 2b) calculate distance between RDMs (cosine, correlation)
-            A{2} = alexnet_connect('estimate_distance',RDM,0,'RDM');
-            % 2c) calculate transformation matrices T between Gs
-            A{3} = alexnet_connect('T_doAll',G);
-            %% 3) estimate topology - neighbourhood, then relate to true order
+            % calculate transformation matrices T between Gs
+            A = alexnet_connect('T_doAll',fD{3});
+           %% 3) estimate topology - neighbourhood, then relate to true order
             for m = 1:length(metricType)
                 d = dataType(m);
                 if d<3 % uni / multivariate - corr / cos
-                    D = rsa_squareRDM(A{d}.dist(A{d}.distType==metricType(m))');
+                    t = alexnet_connect('calcDist',fD{dataType(m)},aType{metricType(m)});
+                    D = rsa_squareRDM(t.dist');
                 else % directional
-                    t = rsa_squareIPMfull(A{d}.(dirMetrics{m-4})');
+                    t = rsa_squareIPMfull(A.(dirMetrics{m-4})');
                     D = t+t'; % make it symmetric
                 end
                 % assess the order
                 N = create_neighbourhood(D,nNeigh);
-                V.tau = corr(rsa_vectorizeRDM(N)',rsa_vectorizeRDM(trueOrd)','Type','Kendall');
-                V.metric = m;
-                V.dataType  = d; % uni / multi / directional
-                V.metricType = metricType(m); % corr / cos / eigStd ...
-                V.numSim = n;
+                t = squareform(pdist(order'));
+                V.tauN          = corr(rsa_vectorizeRDM(N)',rsa_vectorizeRDM(trueOrd)','Type','Kendall'); % of the neighbourhood
+                V.tauAll        = corr(rsa_vectorizeRDM(D)',rsa_vectorizeRDM(t)','Type','Kendall'); % overall - whole distance matrix
+                V.metric        = m;
+                V.dataType      = d; % uni / multi / directional
+                V.metricType    = metricType(m); % corr / cos / eigStd ...
+                V.numSim        = n;
                 VV=addstruct(VV,V);
             end
-            fprintf('\n%d. simulation done...',n);
+            fprintf('%d. simulation done...',n);
             toc(tStart);
         end
         % save here
         save(fullfile(baseDir,'validate_noiseless_subsetCond'),'-struct','VV'); 
+    case 'plot_validate_noiseless_subset'
+        subsetType = 'Cond'; % Cond or Unit
+        vararginoptions(varargin,{'subsetType'});
+        T = load(fullfile(baseDir,sprintf('validate_noiseless_subset%s',subsetType)));
+        tickLab = {'uni-corr','uni-cos','multi-corr','multi-cos','G-scaleDist','G-diagDist','G-diagRange','G-diagStd','G-eigRange','G-eigStd'};
+        figure
+        subplot(211)
+        barplot(T.dataType,T.tauN,'split',T.metricType);
+        set(gca,'XTickLabel',tickLab); ylabel('Tau with true neighbourhood graph');
+        title(sprintf('subsampling %s',subsetType));
+        subplot(212)
+        barplot(T.dataType,T.tauAll,'split',T.metricType);
+        set(gca,'XTickLabel',tickLab); ylabel('Tau with true distance layers graph');
+
     case 'simulate_noise'
         nPart       = 8;
-        nSim        = 10;
+        nSim        = 20;
         nUnits      = 500;
         noiseType   = 'within'; % allEqual or neighbours
         vararginoptions(varargin,{'nPart','nSim','noiseType','dataType'});
-        
         % initialize
         n_neigh     = 2; % number of neighbours to consider
         dataInd     = [1 1 2 2 3 3 4 4 4 4 4 4 5 5 5 5 5 5 6]; % anzelotti as 6
@@ -1836,8 +1847,10 @@ switch what
                             T = anzellottiDist(Data,nPart,size(act{1},1));
                         end
                         % assess the order
-                        N = create_neighbourhood(T,n_neigh);
-                        V.tau = corr(rsa_vectorizeRDM(N)',rsa_vectorizeRDM(trueOrd)','Type','Kendall');
+                        N               = create_neighbourhood(T,n_neigh);
+                        t = squareform(pdist(order'));
+                        V.tauN          = corr(rsa_vectorizeRDM(N)',rsa_vectorizeRDM(trueOrd)','Type','Kendall'); % of the neighbourhood
+                        V.tauAll        = corr(rsa_vectorizeRDM(T)',rsa_vectorizeRDM(t)','Type','Kendall'); % overall - whole distance matrix
                         V.dataType      = dataInd(i); % uni / multi / directional
                         V.metricType 	= alphaInd(i); % corr / cos / eigStd ...
                         V.metricIndex   = i;
@@ -1846,15 +1859,15 @@ switch what
                         V.varReg        = v;
                         VV=addstruct(VV,V);
                     end
-                    fprintf('\n%d. ',n);
+                    fprintf('%d. ',n);
                     toc(tElapsed);
                 end
                 fprintf('\nFinished variance %d.\n\n',v);
             end
             fprintf('\nFinished correlation %d.\n\n',r);
         end
-        save(fullfile(baseDir,sprintf('simulations_noise_%s_%s',noiseType,dataType)),'-struct','VV');
-        fprintf('\nDone simulations - %s - %s\n',noiseType,dataType);
+        save(fullfile(baseDir,sprintf('simulations_noise_%s',noiseType)),'-struct','VV');
+        fprintf('\nDone simulations - %s \n',noiseType);
      
     case 'HOUSEKEEPING:correctOrder'
         % reorder activation units
@@ -1922,10 +1935,11 @@ switch what
     
     case 'run_job'
        % alexnet_connect('run_calcConnect');
-        alexnet_connect('validate_noiseless_subsetUnit');
-        fprintf('Done subsampling units!\n\n\n');
-        alexnet_connect('validate_noiseless_subsetCond');
-        fprintf('Done subsampling conditions!\n\n\n');
+       % alexnet_connect('validate_noiseless_subsetUnit');
+       % fprintf('Done subsampling units!\n\n\n');
+       % alexnet_connect('validate_noiseless_subsetCond');
+       % fprintf('Done subsampling conditions!\n\n\n');
+        % re-run these:
         alexnet_connect('validate_isomap_noiseless_subsetUnit');
         fprintf('Done subsampling units - with isomap!\n\n\n');
         alexnet_connect('validate_isomap_noiseless_subsetCond');
