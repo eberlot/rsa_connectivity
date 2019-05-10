@@ -293,7 +293,7 @@ switch what
         nCond = 5;
         nVox = 100;
         nReg = 2;
-        type = 'rand'; % determine what type G1 is
+        type = 'example1'; % determine what type G1 is
         vararginoptions(varargin,{'nVox','nCond','type'});
         
         H = eye(nCond) - 1/nCond; 
@@ -540,41 +540,209 @@ switch what
         imagesc(T);
         title('T - G1->G2');
         
-    case 'rotation'
-        nCond = 5;
-        nVox = 100;
-        nReg = 2;
-        % create two random G matrices
-        for i=1:nReg
-            U = randn(nCond,nVox);
-            G{i} = U*U'/nVox;
-            G{i} = G{i}./trace(G{i});
-        end
+    case 'rotateExample'
+        U1 = [-.5 .5 -.5 .5; .5 .5 -.5 -.5]';
+        U2 = U1;
+        U2(:,1) = U2(:,1).*.5;
+        G1 = U1*U1';
+        G2 = U2*U2';
+        % here rotate
+        [V,L] = eig(G1);
+        [l,i] = sort(diag(L),1,'descend');
+        V     = V(:,i);
+        U1b   = bsxfun(@times,V,real(sqrt(l')));
+        G2b   = U1b*U1b';
+        % calculate transformation
+        A   = pinv(U1)*U2;
+        A2  = pinv(U1b)*U2;
+        T   = A*A';
+        T2  = A2*A2';
+        T1  = zeros(4); % make the dimensions the same
+        T1(1) = T(1);
+        T1(2,2) = T(2,2);
         
-        % decompose G1 - eigenvalue decomposition
-        % G1
-        [V1,L1]     = eig(G{1});
-        [l,i]       = sort(diag(L1),1,'descend'); % sort the eigenvalues
-        V1          = V1(:,i);
-        U1          = bsxfun(@times,V1,real(sqrt(l')));
-        % here swap the order
-        order = [3,2,4,5,1];
-        Vs1         = V1(:,order);
-        Us1         = bsxfun(@times,Vs1,real(sqrt(l(order,:)')));
-        % G2
-        [V2,L2]     = eig(G{2});
-        [l,i]       = sort(diag(L2),1,'descend');
-        V2          = V2(:,i);
-        U2          = bsxfun(@times,V2,real(sqrt(l')));
-        
-        % transformation matrix T - A*A'
-        A = pinv(U1)*U2;
-        T = A*A';
-        As = pinv(Us1)*U2;
-        Ts = As*As';
+        figure
+        subplot(221)
+        imagesc(T1);colorbar;title('T - diagonal only');
+        subplot(223)
+        imagesc(T2);colorbar;title('T - rotated');
+        subplot(222)
+        plot(1:4,eig(T1),'-ko');title('eigenvalues of T');
+        subplot(224)
+        plot(1:4,eig(T2),'-ko');title('eigenvalues of rotated T');
         keyboard;
-        %sum(eig(Ts))^2/(sum(eig(Ts).^2))
+    case 'eig_rankDefic'
+        % example demonstrating how rank of T depends on the number of
+        % non-negative eigenvalues of G
+        U1 = randn(5,6);
+        U2 = randn(5,2);
+        G1 = U1*U1';
+        G2 = U2*U2';
+        T = calcTransformG(G1,G2);
+        varargout{1}=eig(T);
+        varargout{2}=rank(T);
+        
+    case 'cos_corrExample'
+        % example to contrast cosine and correlation distances
+        nCond = 5;
+        C = indicatorMatrix('allpairs',1:nCond);
+        H = eye(nCond) - 1/nCond; 
+        U1 = randn(nCond,6);
+        U2 = randn(nCond,6);
+        G{1} = U1*U1';
+        G{3} = U2*U2';
+        G{2} = (G{1}.*0.9)+(G{3}.*0.1);
+        D(1,:) = diag(C*G{1}*C')';
+        D(2,:) = diag(C*G{2}*C')';
+        D(3,:) = diag(C*G{3}*C')'; % scale down
+        D(4,:) = D(3,:).*10000;
+        G{4} = -0.5*H*rsa_squareRDM(D(4,:))*H';
+
+        % calculate distances
+        C1 = rsa_predictG('calcDist',D,'correlation');
+        C2 = rsa_predictG('calcDist',D,'cosine');
+        rsa_predictG('plotRDMs',D); 
+        rsa_predictG('plotConnect',{C1,C2});     
+        for i=1:4 
+            [Y{i}, partVec{i},condVec{i}] = makePatterns(G{i},'nPart',8,'nVox',100);
+        end
+        Data = addSharedNoise(Y,20,0,'within'); % add noise
+        [U,RDM,cRDM,G,cG]=getFirstLevel(Data',8,5);
+        % again plot, do cos / corr 
+        rsa_predictG('plotRDMs',RDM);
+        C1 = rsa_predictG('calcDist',RDM,'correlation');
+        C2 = rsa_predictG('calcDist',RDM,'cosine');
+        rsa_predictG('plotConnect',{C1,C2});  
+        C1 = rsa_predictG('calcDist',cRDM,'correlation');
+        C2 = rsa_predictG('calcDist',cRDM,'cosine');
+        rsa_predictG('plotRDMs',cRDM);
+        rsa_predictG('plotConnect',{C1,C2});  
+        keyboard;
+    case 'calcDist'
+        % calculate correlation / cosine distances
+        rdm = varargin{1};
+        distType = varargin{2};
+        % calculate distance metric from the input
+        % input: N x D matrix (N - number of RDMs; D - distance pairs)
+        % dist types: 'correlation' or 'cosine'
+        % output: structure D, with fields:
+        %   - D: pairwise distances of RDMs
+        %   - l1: indicator which rdm / layer taken as first
+        %   - l2: indicator which rdm ; layer taken as second
+        switch (distType)
+            case 'correlation'
+                % additional step for correlation - first remove the mean
+                rdm  = bsxfun(@minus,rdm,mean(rdm,2));
+        end
+        nRDM = size(rdm,1);
+        rdm  = normalizeX(rdm);
+        tmpR  = rdm*rdm'; % correlation across RDMs
+        D.dist = 1-rsa_vectorizeRDM(tmpR)'; % distances
+        ind=indicatorMatrix('allpairs',(1:nRDM));
+        % determine each element of the pair
+        [~,D.l1]=find(ind==1);
+        i=ismember(ind,-1);
+        D.l2 = sum(cumprod(i==0,2),2)+1;
+        varargout{1}=D;
+    case 'plotRDMs'
+        D = varargin{1};
+        nRDM = size(D,1);
+        figure
+        for i=1:nRDM
+            subplot(1,nRDM,i);
+            imagesc(rsa_squareRDM(D(i,:)));colorbar;
+        end
+    case 'plotConnect'
+        C=varargin{1};
+        nConnect = size(C,2);
+        figure
+        for i=1:nConnect
+            subplot(1,nConnect,i)
+            imagesc(rsa_squareRDM(C{i}.dist')); colorbar;
+        end
         
     otherwise
         fprintf('No such case!')
+end
+end
+
+function [U,RDM,cRDM,G,cG]  = getFirstLevel(Data,nPart,nCond)
+
+numLayer = size(Data,1);
+partVec = kron((1:nPart)',ones(nCond,1));          
+condVec = kron(ones(nPart,1),(1:nCond)');
+% initialize
+G = cell(numLayer,1);
+cG = G;
+% contrast matrix for G->distances
+C = indicatorMatrix('allpairs',1:nCond);
+X = indicatorMatrix('identity_p',condVec);
+H = eye(nCond)-ones(nCond)./nCond; 
+%H = eye(nCond)-ones(nCond)./nCond; 
+RDM = zeros(numLayer,size(C,1));
+cRDM = RDM;
+U = zeros(numLayer,nCond);
+for i=1:numLayer
+    nVox = size(Data{i},2);
+    % calculate mean activation 
+    t=Data{i};
+    for j=1:nPart % first remove the mean of each run
+        t(partVec==j,:)=bsxfun(@minus,Data{i}(partVec==j,:),mean(Data{i}(partVec==j,:),1));
+    end
+    D           = pinv(X)*Data{i};
+    G{i}        = D*D'/nVox;
+    G{i}        = H*G{i}*H';
+    G{i}        = G{i}./trace(G{i});
+    RDM(i,:)    = diag(C*G{i}*C')';
+    D           = pinv(X)*t;
+    U(i,:)      = mean(D,2)';
+    %cRDM(i,:)   = rsa.distanceLDC(Data{i},partVec,condVec); % equivalent as below
+    cG{i}       = pcm_estGCrossval(Data{i},partVec,condVec);
+    cG{i}       = H*cG{i}*H';
+    cG{i}       = cG{i}./trace(cG{i});
+    cRDM(i,:)   = diag(C*cG{i}*C')';  
+end
+end
+function data               = addSharedNoise(data,Var,r,noiseType)
+% input: 
+% data - datasets
+% alpha - variance
+% r - correlation
+% noiseType - allEqual or neighbours
+    nDataset = size(data,1);
+    nTrials = size(data{1},1);
+    nVox    = size(data{1},2);
+    
+    % add shared noise (shared within / across regions)
+    Z = normrnd(0,1,nTrials,nDataset*nVox);
+    Z = Z./max(max(Z));
+    switch noiseType
+        case 'within'
+            Zn = Z;
+        case 'noiseless'
+            Zn = Z;
+        case 'within_low'
+            Zn = Z;
+        case 'allEqual'
+            A = eye(nDataset)*Var+(ones(nDataset)-eye(nDataset))*Var*r;
+            P = kron(A,eye(nVox));
+            Zn = Z*sqrtm(P);     % shared noise matrix across reg
+        case 'neighbours'
+            % first structured shared noise
+            kernelWidth = 500; % decide on the kernel width
+            t           = 1:nVox*nDataset;
+            dist        = pdist(t');
+            noiseKernel = exp((-0.5*dist)/kernelWidth);
+            P           = squareform(noiseKernel);
+            %   Zn          = Z*real(sqrtm(P));
+            Zn          = Z*P;
+            % modulate the relative strength of the shared noise 
+            Zn = Zn./max(max(Zn));
+            Zn = Z.*(1-r)+(Zn.*r);
+    end
+    Zn = Zn./max(max(Zn));
+    for i=1:nDataset
+        data{i} = data{i} + Var.*Zn(:,(i-1)*nVox+1:i*nVox);
+        data{i} = data{i}./max(max(data{i}));
+    end
 end
