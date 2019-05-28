@@ -29,8 +29,8 @@ function varargout = alexnet_connect(what,varargin)
 % usage: alexnet_connect('run_all','figOn',1);
 
 % ---------------------- directory, files --------------------------------
-%baseDir = '/Volumes/MotorControl/data/rsa_connectivity/alexnet';
-baseDir = '/Users/Eva/Documents/Data/rsa_connectivity/alexnet';
+baseDir = '/Volumes/MotorControl/data/rsa_connectivity/alexnet_old';
+%baseDir = '/Users/Eva/Documents/Data/rsa_connectivity/alexnet_92';
 load(fullfile(baseDir,'imageActivations_alexNet_4Eva'),'activations_rand','activations_correct');
 
 % ------------------- parameters to initialise ---------------------------
