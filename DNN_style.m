@@ -119,5 +119,20 @@ switch(styID)
         opt.general.linestyle   = {'-','-'};
         opt.general.errorbars   = 'shade';
         opt.general.markersize   = 4;
-        
+    case 'FourShade_cool'
+        colours                 = {[73 79 162]/255,lightblue,[126 202 170]/255,gray};
+        canvas                  = 'blackonwhite';
+        opt.save.journal        = 'brain';
+        opt.general.markertype  = {'o','s'};
+        opt.general.linestyle   = {'-','--','-','-'};
+        opt.general.errorbars   = 'shade';
+        opt.general.markersize   = 4;
+    case 'FourColor'
+        colours = {black,gray,blue,red};
+        canvas                  = 'blackonwhite';
+        opt.save.journal        = 'brain';
+        opt.general.markertype  = {'o','s'};
+        opt.general.linestyle   = {'-','-','-','-','--','--','--','--'};
+        opt.general.errorbars   = 'shade';
+        opt.general.markersize   = 4;
 end;

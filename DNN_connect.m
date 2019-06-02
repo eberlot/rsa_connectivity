@@ -228,8 +228,8 @@ switch what
             nRDM = size(rdm,1);
             rdm  = normalizeX(rdm);
             tmpR  = rdm*rdm'; % correlation across RDMs
-            %D.dist = 1-rsa_vectorizeRDM(tmpR)'; % distances
-            D.dist = rsa_vectorizeRDM(tmpR)'; % distances
+            D.dist = 1-rsa_vectorizeRDM(tmpR)'; % distances
+            %D.dist = rsa_vectorizeRDM(tmpR)'; % distances
             ind=indicatorMatrix('allpairs',(1:nRDM));
             % determine each element of the pair
             [~,D.l1]=find(ind==1);
@@ -275,16 +275,44 @@ switch what
         DNNname = 'alexnet';
         vararginoptions(varargin,{'DNNname'});
         load(fullfile(baseDir,DNNname,sprintf('%s_alpha',DNNname))); % load in act
-        idx=1;figure;
+        idx=1;
         for i=1:3
+            figure
+            if i==1
+                anchorCols = [0 0 1; 1 1 1; 1 0 0];
+                cols = colorScale(anchorCols,256,1);
+            else
+                betCol = [246 149 155]./255;
+                anchorCols = [1 1 1; betCol; 1 0 0];
+                cols = colorScale(anchorCols,256,1);
+            end
+            figure(99);
             a=alpha{i};
             subplot(3,2,idx)
-            imagesc(rsa_squareRDM(a.dist(a.distType==1)')); title(sprintf('%s - corr-RDM',dType{i})); colorbar;
+            minimum = min(a.dist(a.distType==1));
+            maximum = max(a.dist(a.distType==1));
+            if i==1
+                v = max([abs(minimum) maximum]);
+                minimum = -v;
+                maximum = v;
+            end
+            %limit = max([abs(minimum) abs(maximum)]);
+            imagesc(rsa_squareRDM(a.dist(a.distType==1)'),[minimum maximum]); title(sprintf('%s - corr-RDM',dType{i})); 
+            colormap(gca,cols); colorbar;
             subplot(3,2,idx+1)
-            imagesc(rsa_squareRDM(a.dist(a.distType==2)')); title(sprintf('%s - cos-RDM',dType{i})); colorbar;
+            minimum = min(a.dist(a.distType==2));
+            maximum = max(a.dist(a.distType==2));
+            if i==1
+                v = max([abs(minimum) maximum]);
+                minimum = -v;
+                maximum = v;
+            end
+            %limit = max([abs(minimum) abs(maximum)]);
+            imagesc(rsa_squareRDM(a.dist(a.distType==2)'),[minimum maximum]); title(sprintf('%s - cos-RDM',dType{i})); 
             idx=idx+2;
+            colormap(gca,cols); colorbar;
         end
-        colormap hot;
+      %  colormap hot;
     case 'isomap:undirected'
         n_dim   = 2; % number of dimensions to consider
         n_neigh = 1; % number of neighbours to consider
@@ -839,8 +867,8 @@ switch what
         nUnits      = 500;
         noiseType   = 'shared_harmful';
         DNNname     = 'alexnet';
-        varReg = [0,1.7:0.2:3];
-        corrReg = [0,0.2,0.4,0.8];
+        varReg = 0:0.25:3;
+        corrReg = [0,0.1,0.2,0.4];
         vararginoptions(varargin,{'nPart','nSim','noiseType','dataType','DNNname','corrReg','varReg'});
         % initialize
         % 1) corr with uni; 2) corr with RDM-squared; 3) corr with RDM-sqrt;
@@ -890,9 +918,12 @@ switch what
                 end
                 for r=corR         % correlated noise
                     Data = addSharedNoise(data,v,r,noiseType);
+                    for nreg = 1:size(Data,1)
+                        Data2{nreg,:} = Data{nreg}(1:size(Data{nreg},1)/2,:);
+                    end
                     [RDMconsist,~,Conf_corr,Conf_cos] = rdmConsist(Data,nPart,size(act_subsets{1},1));
                     % consistency of corr / cosine estimation
-                    [fD{1},fD{2},fD{3},fD{4},fD{5},~,~]=DNN_connect('firstLevel:calculate',Data,nCond);
+                    [fD{1},fD{2},fD{3},fD{4},fD{5},~,~]=DNN_connect('firstLevel:calculate',Data2,nCond);
                     % order: uni, RDM, RDM_sqrt, cRDM, cRDM_sqrt
                     % cycle around all combinations of data / metrics
                     for i=1:length(dataInd)
@@ -929,7 +960,7 @@ switch what
             end % variance
             toc(tElapsed);
         end
-        save(fullfile(baseDir,DNNname,'simulations_noise_shared_OHBM2'),'-struct','VV');
+        save(fullfile(baseDir,DNNname,'simulations_noise_shared_OHBM'),'-struct','VV');
         fprintf('\nDone within simulations %s: %s \n\n',DNNname);
     case 'noise:simulate_shared_helpful_short' % FOR OHBM
         %spatial noise corresponds to the true order
@@ -1087,8 +1118,11 @@ switch what
                 end
                 for r=corR         % correlated noise
                     Data = addSharedNoise(data,v,r,noiseType);
+                    for nreg = 1:size(Data,1)
+                        Data2{nreg,:} = Data{nreg}(1:size(Data{nreg},1)/2,:);
+                    end % use only half of the data (to equate what is used for double crossval
                     [RDMconsist,~] = rdmConsist(Data,nPart,size(act_subsets{1},1));
-                    [fD{1},fD{2},~,fD{3},~,~,~]=DNN_connect('firstLevel:calculate',Data,nCond);
+                    [fD{1},fD{2},~,fD{3},~,~,~]=DNN_connect('firstLevel:calculate',Data2,nCond);
                     [W_dcv,Conf_dcv] = DNN_connect('doubleCrossval',Data,nPart,size(act_subsets{1},1));
                     % order: uni, RDM, RDM_sqrt (not), cRDM, cRDM_sqrt (not)
                     % cycle around all combinations of data / metrics
@@ -1135,8 +1169,8 @@ switch what
             end % variance
             toc(tElapsed);
         end
-        save(fullfile(baseDir,DNNname,'simulations_noise_shared_doubleCross_OHBM'),'-struct','VV');
-        save(fullfile(baseDir,DNNname,'simulations_noise_confidence_doubleCross_OHBM'),'-struct','CC');
+        save(fullfile(baseDir,DNNname,'simulations_noise_shared_doubleCross_OHBM_NEW'),'-struct','VV');
+        save(fullfile(baseDir,DNNname,'simulations_noise_confidence_doubleCross_OHBM_NEW'),'-struct','CC');
         fprintf('\nDone shared confidence simulations %s: %s \n\n',DNNname);
     case 'noise:simulate_perReg' % FOR OHBM
         % include only metrics that will be used for OHBM
@@ -1234,7 +1268,8 @@ switch what
         DNNname     = 'alexnet';
         vararginoptions(varargin,{'DNNname'});
         T = load(fullfile(baseDir,DNNname,'simulations_noise_within_OHBM2'));
-        style.use('Alter4');
+      %  style.use('Alter4');
+        style.use('FourShade_cool');
         if strcmp(DNNname,'alexnet')
            % t = getrow(T,ismember(T.dataType,[2,4,6]));
            t = getrow(T,T.dataType>1);
@@ -1251,12 +1286,24 @@ switch what
         subplot(313)
         plt.line(t.varReg,abs(t.tauTrue_all),'split',[t.dataType t.metricType]);
         xlabel('Noise'); ylabel('Comparison to true structure (corr)');
+        
+        figure
+        subplot(131)
+        plt.line(t.varReg,t.corrNoiseless,'split',[t.dataType t.metricType]);
+        xlabel('Noise'); ylabel('r(noiseless)');
+        subplot(132)
+        plt.line(t.RDMconsist,t.corrNoiseless,'split',[t.dataType t.metricType]);
+        xlabel('Noise / RDM consistency'); ylabel('r(noiseless)');
+        subplot(133)
+        plt.scatter(t.varReg,t.RDMconsist)
+        xlabel('Noise');ylabel('RDM consistency');
         % add lines at 1.9, 2.5, 2.7 (based on fMRI dataset)
     case 'noise:shared_plot' % FOR OHBM
         DNNname = 'alexnet';
         vararginoptions(varargin,{'DNNname'});
         
         T=load(fullfile(baseDir,DNNname,'simulations_noise_shared_OHBM2'));
+      %  T=load(fullfile(baseDir,DNNname,'simulations_noise_shared_helpful_OHBM'));
         style.use('gray');
         t = getrow(T,ismember(T.dataType,[2,4,6]));
         
@@ -1268,7 +1315,7 @@ switch what
                 subplot(numel(unique(t1.metricType)),2,(j-1)*2+1)
                 plt.line(t1.varReg,t1.corrNoiseless,'split',t1.corrReg,'subset',t1.metricType==metric(j)); ylabel('p(true structure)'); xlabel('overall noise');
                 subplot(numel(unique(t1.metricType)),2,(j-1)*2+2)
-                plt.line(t1.varReg,t1.tauSpatial_NN,'split',t1.corrReg,'subset',t1.metricType==metric(j)); ylabel('p(true structure) normalised'); xlabel('overall noise');
+                plt.line(t1.varReg,abs(t1.tauTrue_NN),'split',t1.corrReg,'subset',t1.metricType==metric(j)); ylabel('p(true structure) normalised'); xlabel('overall noise');
             end
         end
         
@@ -1280,27 +1327,27 @@ switch what
             metric = unique(t1.metricType);
             for j=1:numel(metric)
                 subplot(2,4,idx)
-                plt.line([t1.varReg>0 t1.varReg],t1.corrNoiseless,'split',t1.corrReg,'subset',t1.metricType==metric(j)&t1.corrReg<0.5); ylabel('r(true structure)'); xlabel('overall noise');
+                plt.line([t1.varReg>0 t1.varReg],t1.corrNoiseless,'split',t1.corrReg,'subset',t1.metricType==metric(j)&t1.corrReg<0.5); ylabel('r(noiseless structure)'); xlabel('overall noise');
                 subplot(2,4,4+idx)
-                plt.line([t1.varReg>0 t1.varReg],t1.tauSpatial_NN,'split',t1.corrReg,'subset',t1.metricType==metric(j)&t1.corrReg<0.5); ylabel('r(spatial noise structure)'); xlabel('overall noise');
+                plt.line([t1.varReg>0 t1.varReg],abs(t1.tauSpatial_NN),'split',t1.corrReg,'subset',t1.metricType==metric(j)&t1.corrReg<0.5); ylabel('r(spatial noise structure)'); xlabel('overall noise');
                 idx = idx+1;
             end
         end
         
         t2 = getrow(t,t.dataType~=4 | t.metricType~=1);
-        corrR = [0, 0.2,0.4];
+        corrR = [0,0.1,0.2,0.4];
         figure
         style.use('ThreeShade');
         for i=1:3
             subplot(2,3,i)
             plt.line([t2.varReg>0 t2.varReg],t2.corrNoiseless,'split',t2.dataType,'subset',t2.corrReg==corrR(i))
             if i==1
-                ylabel('r(true structure)');
+                ylabel('r(noiseless structure)');
             else
                 ylabel(''); 
             end
             subplot(2,3,3+i)
-            plt.line([t2.varReg>0 t2.varReg],t2.tauSpatial_NN,'split',t2.dataType,'subset',t2.corrReg==corrR(i))
+            plt.line([t2.varReg>0 t2.varReg],abs(t2.tauSpatial_NN),'split',t2.dataType,'subset',t2.corrReg==corrR(i))
             if i==1
                 ylabel('r(spatial noise structure)'); 
             else
@@ -1309,17 +1356,17 @@ switch what
             xlabel('overall noise');
         end
         figure
-        style.use('FourShade');
-        for i=1:3
-            subplot(2,3,i)
+        style.use('FourShade_cool');
+        for i=1:length(corrR)
+            subplot(2,length(corrR),i)
             plt.line([t.varReg>0 t.varReg],t.corrNoiseless,'split',[t.dataType t.metricType],'subset',t.corrReg==corrR(i))
             if i==1
-                ylabel('r(true structure)');
+                ylabel('r(noiseless structure)');
             else
                 ylabel(''); 
             end
-            subplot(2,3,3+i)
-            plt.line([t.varReg>0 t.varReg],t.tauSpatial_NN,'split',[t.dataType t.metricType],'subset',t.corrReg==corrR(i))
+            subplot(2,length(corrR),length(corrR)+i)
+            plt.line([t.varReg>0 t.varReg],abs(t.tauSpatial_NN),'split',[t.dataType t.metricType],'subset',t.corrReg==corrR(i))
             if i==1
                 ylabel('r(spatial noise structure)'); 
             else
@@ -1327,6 +1374,41 @@ switch what
             end
             xlabel('overall noise');
         end
+    case 'noise:shared_confidence'
+        DNNname = 'alexnet';
+        vararginoptions(varargin,{'DNNname'});
+        
+        T=load(fullfile(baseDir,DNNname,'simulations_noise_shared_doubleCross_OHBM_NEW'));
+        keyboard;
+        style.use('gray');
+        for dt=unique(T.dataType)'
+            t1 = getrow(T,T.dataType==dt);
+            figure
+            metric = unique(t1.metricType);
+            for j=1:numel(metric)
+                subplot(numel(unique(t1.metricType)),2,(j-1)*2+1)
+                plt.line(t1.varReg,t1.corrNoiseless,'split',t1.corrReg,'subset',t1.metricType==metric(j)); ylabel('p(true structure)'); xlabel('overall noise');
+                subplot(numel(unique(t1.metricType)),2,(j-1)*2+2)
+                plt.line(t1.varReg,abs(t1.tauSpatial_NN),'split',t1.corrReg,'subset',t1.metricType==metric(j)); ylabel('p(true structure) normalised'); xlabel('overall noise');
+            end
+        end
+        keyboard;
+        
+        figure
+        style.use('FourColor');
+        subplot(221)
+        plt.line(T.varReg,T.corrNoiseless,'split',[T.dataType,T.corrReg],'subset',T.metricType==1&T.dataType>2);
+        title('Correlation - single vs. double crossval'); ylabel('correlation to noiseless');
+        subplot(222)
+        plt.line(T.varReg,T.corrNoiseless,'split',[T.dataType,T.corrReg],'subset',T.metricType==2&T.dataType>1);
+        title('Cosine - single vs. double crossval'); ylabel('correlation to noiseless');
+        subplot(223)
+        plt.line(T.varReg,T.tauSpatial_NN,'split',[T.dataType,T.corrReg],'subset',T.metricType==1&T.dataType>2);
+        ylabel('bias towards spatial noise'); xlabel('overall noise levels');
+        subplot(224)
+        plt.line(T.varReg,T.tauSpatial_NN,'split',[T.dataType,T.corrReg],'subset',T.metricType==2&T.dataType>1);
+        ylabel('bias towards spatial noise'); xlabel('overall noise levels');
+        
     case 'noise:plot_perReg'
         DNNname = 'alexnet';
         vararginoptions(varargin,{'DNNname'});
