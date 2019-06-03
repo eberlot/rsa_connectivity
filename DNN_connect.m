@@ -282,7 +282,7 @@ switch what
                 anchorCols = [0 0 1; 1 1 1; 1 0 0];
                 cols = colorScale(anchorCols,256,1);
             else
-                betCol = [246 149 155]./255;
+                betCol = [245 132 132]./255;
                 anchorCols = [1 1 1; betCol; 1 0 0];
                 cols = colorScale(anchorCols,256,1);
             end
@@ -1752,6 +1752,7 @@ switch what
         style.use('TwoShade');
         plt.scatter(t.RDMconsist,mean(C.conf,2),'split',t.metricType,'leg',{'corr','cos'});
         xlabel('RDM consistency (per region)'); ylabel('variance in connectivity estimate');
+    
     case 'noiseless:subsetCond'
         % validate topology in the noiseless case by subsampling conditions
         % use the normalized activation units here
@@ -1896,7 +1897,10 @@ switch what
         [mX,mp] = topology_estimate(D,n_dim,n_neigh); % submit to topology function
         figure
         subplot(121)
-        imagesc(D); colormap hot;
+        betCol = [245 132 132]./255;
+        anchorCols = [1 1 1; betCol; 1 0 0];
+        cols = colorScale(anchorCols,256,1);
+        imagesc(D); colormap(gca,cols);
         title('Anzellotti RDM');
         subplot(122)
         hold on;
