@@ -109,6 +109,7 @@ end
 %r = mean(r);
 %R2 = mean(R2);
 %r = 1-mean(r);
-R2 = 1-mean(R2); % previous version - to make into distances
+R2 = 1-mean(r);
+%R2 = 1-mean(R2); % previous version - to make into distances
 
 end
