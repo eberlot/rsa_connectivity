@@ -1,4 +1,4 @@
-function [R2] = multiDependVox(regA,regB,partVec,condVec,varargin)
+function [R2,r] = multiDependVox(regA,regB,partVec,condVec,varargin)
 %function [R2,r] = multiDependVox(regA,regB,partVec,condVec,varargin);
 % calculates the multivariate dependency of voxel patterns in regA and regB
 % 1) splits regA and regB patterns across runs
@@ -106,10 +106,11 @@ for i=1:nPart
     R2(i)   = 1-(trace(res*res')/trace(B_test*B_test')); % 1 - SSR/SST
 end
 
-%r = mean(r);
-%R2 = mean(R2);
-%r = 1-mean(r);
-R2 = 1-mean(r);
-%R2 = 1-mean(R2); % previous version - to make into distances
 
+% as similarity:
+r = mean(r);
+R2 = mean(R2);
+% as dissimilarity:
+%r = 1-mean(r);
+%R2 = 1-mean(R2);
 end

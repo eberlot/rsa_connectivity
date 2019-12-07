@@ -149,4 +149,20 @@ switch(styID)
     case 'FourColor_wBlack'
         colours                  = {black,[73 79 162]/255,lightblue,[126 202 170]/255};
         opt.general.markersize   = 4;
+    case 'FiveColours'
+        colours                 = {[73 79 162]/255,lightblue,[126 202 170]/255,mediumred,gray};
+        canvas                  = 'blackonwhite';
+        opt.save.journal        = 'brain';
+        opt.general.markertype  = {'o','s'};
+        opt.general.linestyle   = {'-','-','-','-'};
+        opt.general.errorbars   = 'shade';
+        opt.general.markersize   = 3;
+    case 'FourColours'
+        colours                 = {lightblue,[126 202 170]/255,mediumred,gray};
+        canvas                  = 'blackonwhite';
+        opt.save.journal        = 'brain';
+        opt.general.markertype  = {'o','s'};
+        opt.general.linestyle   = {'-','-','-','-'};
+        opt.general.errorbars   = 'shade';
+        opt.general.markersize   = 3;
 end;
