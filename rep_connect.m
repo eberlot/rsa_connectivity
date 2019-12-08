@@ -1989,7 +1989,33 @@ switch what
         end
         varargout{1}=actN;    
 
-
+    case 'test_doubleCrossval'
+        % here test case to determine when unbiased of shared noise
+        noiseType = 'within';
+        nReg = 2;
+        nPart = 4;
+        nCond = 10;
+        nVox = 500;
+        nSim = 100;
+        corrReg = 0;
+        vararginoptions(varargin,{'nPart','nVox','noiseType','nCond','corrReg','nSim'});
+        
+        TT = [];
+        for n=1:nReg
+            data{n,1} = repmat(zeros(nCond,nVox),nPart,1);
+        end
+        for r=corrReg
+            for n = 1:nSim
+                Data = addSharedNoise(data,5,r,noiseType);
+                Data = rep_connect('HOUSEKEEPING:removeRunMean',Data,nPart,nCond);
+                T = doubleCrossval_lcka(Data,nPart,nCond);
+                T.nSim = n;
+                T.corrReg = r;
+                TT = addstruct(TT,T);
+            end
+            fprintf('Done corr %1.1f.\n',r);
+        end
+        keyboard;
     case 'run_job'
         rep_connect('noise:simulate','nSim',500);
         rep_connect('noise:simulate','noiseType','within_oneNoisy','nSim',500); 
@@ -2083,10 +2109,25 @@ function [data,spatOrder] = addSharedNoise(data,Var,r,noiseType)
             % modulate the relative strength of the shared noise 
             Zn = Zn./max(max(Zn));
             Zn = Z.*(1-r)+(Zn.*r);
-            spatOrder = randperm(8);
+            spatOrder = randperm(nDataset);
             Zn2 = zeros(size(Zn));
-            for j=1:8
+            for j=1:nDataset
                 Zn2(:,(j-1)*nVox+1:j*nVox) = Zn(:,(spatOrder(j)-1)*nVox+1:spatOrder(j)*nVox);
+            end
+            Zn = Zn2;
+        case 'shared'
+            kernelWidth = 500; % decide on the kernel width
+            t           = 1:nVox*nDataset;
+            dist        = pdist(t');
+            noiseKernel = exp((-0.5*dist)/kernelWidth);
+            P           = squareform(noiseKernel);
+            Zn          = Z*P;
+            Zn = Zn./max(max(Zn));
+            %Zn = Z.*(1-r)+(Zn.*r);
+            Zn = Z+(Zn.*r);
+            Zn2 = zeros(size(Zn));
+            for j=1:nDataset
+                Zn2(:,(j-1)*nVox+1:j*nVox) = Zn(:,(j-1)*nVox+1:j*nVox);
             end
             Zn = Zn2;
     end
