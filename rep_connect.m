@@ -2016,6 +2016,32 @@ switch what
             fprintf('Done corr %1.1f.\n',r);
         end
         keyboard;
+    case 'test_doubleCrossval_proportion'
+        % here calculate how much of data proportion is used
+        % when using ncv / cv / ccv lCKA
+        % in relation to how many partitions data consists of
+        nPart = 3:20;
+        vararginoptions(varargin,{'nPart'});
+        TT = [];
+        for p=nPart
+            ncv1 = p*(p+1)/2; % how many pairs for one region - not crossval
+            ncv2 = ncv1*(ncv1+1)/2;
+            cv1 = p*(p-1)/2; % crossval
+            cv2 = cv1*(cv1+1)/2;
+            ccv1 = p*(p-1)/2; % double-crossval
+            ccv2 = ccv1*(ccv1-1)/2;
+            T.numRun = [p;p;p];
+            T.numComb = [ncv2;cv2;ccv2];
+            T.proportion = [1;cv2/ncv2;ccv2/ncv2];
+            T.type = [1;2;3];
+            TT = addstruct(TT,T);
+        end
+        figure
+        subplot(121)
+        plt.line(TT.numRun,TT.numComb,'split',TT.type);
+        subplot(122)
+        plt.line(TT.numRun,TT.proportion,'split',TT.type);
+        keyboard;
     case 'run_job'
         rep_connect('noise:simulate','nSim',500);
         rep_connect('noise:simulate','noiseType','within_oneNoisy','nSim',500); 

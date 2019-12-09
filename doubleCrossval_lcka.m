@@ -29,7 +29,7 @@ for p1=1:length(ind)
         R_ncv = [R_ncv,tmp_corr];
         TNC1 = [TNC1;tmp1'];
         TNC2 = [TNC2;tmp2'];
-    %    fprintf('%d:\t%d-%d:\t comparing %d-%d with %d-%d\n',idx,p1,p2,ind(p1,1),ind(p1,2),ind(p2,1),ind(p2,2))
+      %  fprintf('%d:\t%d-%d:\t comparing %d-%d with %d-%d\n',idx,p1,p2,ind(p1,1),ind(p1,2),ind(p2,1),ind(p2,2))
         idx = idx+1;
     end
 end
@@ -40,7 +40,7 @@ ind = indicatorMatrix('allpairs',[1:nPart]);
 R_cv = []; TC1 = []; TC2 = [];
 idx=1;
 for p1=1:size(ind,1)
-    for p2=1:size(ind,1) 
+    for p2=p1:size(ind,1) 
         tmp1 = T1(partVec == find(ind(p1,:)==1), partVec == find(ind(p1,:)==-1));
         tmp2 = T2(partVec == find(ind(p2,:)==1), partVec == find(ind(p2,:)==-1));
         tmp1 = H*tmp1*H';
@@ -61,7 +61,7 @@ ind = indicatorMatrix('allpairs',[1:nPart]);
 R_ccv = []; TCC1 = []; TCC2 = [];
 idx=1;
 for p1=1:size(ind,1)
-    for p2=1:size(ind,1)
+    for p2=p1:size(ind,1)
         if p1~=p2
             tmp1 = T1(partVec == find(ind(p1,:)==1), partVec == find(ind(p1,:)==-1));
             tmp2 = T2(partVec == find(ind(p2,:)==1), partVec == find(ind(p2,:)==-1));
@@ -73,7 +73,7 @@ for p1=1:size(ind,1)
             R_ccv = [R_ccv,tmp_corr];
             TCC1 = [TCC1;tmp1'];
             TCC2 = [TCC2;tmp2'];
-          %  fprintf('%d:\t%d-%d:\t comparing %d-%d with %d-%d\n',idx,p1,p2,find(ind(p1,:)==1),find(ind(p1,:)==-1),find(ind(p2,:)==1),find(ind(p2,:)==-1))
+           % fprintf('%d:\t%d-%d:\t comparing %d-%d with %d-%d\n',idx,p1,p2,find(ind(p1,:)==1),find(ind(p1,:)==-1),find(ind(p2,:)==1),find(ind(p2,:)==-1))
             idx = idx+1;
         end
     end
