@@ -2,7 +2,7 @@ function lCKA_dcv = doubleCrossval_lcka(Data,nPart,nCond)
 %function lCKA_dcv = doubleCrossval_lcka(Data,nPart,nPart)
 % calculates lCKA in different ways across two regions
 % INPUT:
-%       - Data - cell (nReg x 1)
+%       - Data - cell (nReg x 1) - for now only works if nReg = 2
 %       - nPart - number of partiitons
 %       - nCond - number of conditions
 
