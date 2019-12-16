@@ -34,12 +34,19 @@ switch(styID)
         opt.save.journal        = 'brain';
         opt.legend.leglocation  = 'eastoutside';
     case 'gray'
-        colours                 = {lightgray,gray,silver,black,red};
+        colours                 = {black,gray,lightgray,silver,red};
         canvas                  = 'blackonwhite';
         opt.save.journal        = 'brain';
         opt.general.markertype  = {'o','v','s','^'};
         opt.general.linestyle   = {'-','--','-.','--','-.'};    
         opt.general.errorbars   = 'shade';
+        opt.general.markersize  = 4;
+    case 'gray_line'
+        colours                 = {black,gray,lightgray,silver,red};
+        canvas                  = 'blackonwhite';
+        opt.save.journal        = 'brain';
+        opt.general.markertype  = {'o','v','s','^'};
+        opt.general.linestyle   = {'-','--','-.','--','-.'};    
         opt.general.markersize  = 4;
     case 'Two'
         % set different shades for colours - colour-blind friendly

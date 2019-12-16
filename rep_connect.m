@@ -3,7 +3,8 @@ function varargout = rep_connect(what,varargin)
 %calculates connectivity between layers of DNN (resnet50, vgg16)
 
 %baseDir = '/Volumes/MotorControl/data/rsa_connectivity/noise_injection';
-baseDir = '/Volumes/MotorControl/data/rsa_connectivity/new_normalization';
+baseDir = '~/Documents/data/rsa_connectivity/new_normalization';
+%baseDir = '/Volumes/MotorControl/data/rsa_connectivity/new_normalization';
 codeDir = '~/Documents/MATLAB/Projects/rsa_connectivity';
 aType = {'correlation','cosine'};
 dType = {'univariate','multi-squared','multi-sqrt'};
@@ -600,6 +601,7 @@ switch what
             title(sprintf('Accuracy, %1.2f, %1.1f misplaced',mean(VV.true_accuOrder(VV.metric==plotDist(i))),...
                 mean(VV.true_accuOrder(VV.true_misplaced==plotDist(i)))));
         end
+        keyboard;
     case 'noise:oneNoisy_plot'
         % here plot the connectivity when one region is more noisy
         nPart       = 8;
@@ -775,7 +777,7 @@ switch what
         nUnits      = 500;
         noiseType   = 'within'; % allEqual or neighbours
         DNNname     = 'alexnet';
-        varReg = [0:.25:4,5:1:10];
+        varReg = [0:.25:6,7:1:12];
         corrReg = 0;
         vararginoptions(varargin,{'nPart','nSim','noiseType','dataType','DNNname','varReg','corrReg'});
         % initialize
@@ -1200,7 +1202,93 @@ switch what
         save(fullfile(baseDir,DNNname,'simulations_noise_shared_doubleCross_oldVersion'),'-struct','VV');
         save(fullfile(baseDir,DNNname,'simulations_noise_confidence_doubleCross_oldVersion'),'-struct','CC');
         fprintf('\nDone shared confidence simulations %s: %s \n\n',DNNname);
-   
+    case 'noise:simulate_shared_doubleCross'
+        % here simulate noise for double crossvalidated lCKA 
+        % Dec 15 2019
+        nPart       = 8;
+        nSim        = 1000;
+        nUnits      = 500;
+        noiseType   = 'shared_harmful';
+        DNNname     = 'alexnet';
+        varReg = 0:.25:6;
+        corrReg = 0:.2:.8;
+        vararginoptions(varargin,{'nPart','nSim','noiseType','dataType','DNNname','varReg','corrReg'});
+        load(fullfile(baseDir,DNNname,sprintf('%s_activations',DNNname)));
+        nCond = size(act{1},1);
+        nLayer = size(act,1);
+        % first normalize activities
+        act = DNN_connect('HOUSEKEEPING:normalizeUnits',act);
+        trueOrder = squareform(pdist((1:nLayer)'));
+        VV=[]; 
+        for n=1:nSim    % number of simulations
+            fprintf('\nSimulation %d:\n',n);
+            tElapsed=tic;
+            % here subsample + repeat the true pattern for each partition
+            act_subsets = cell(nLayer,1);
+            if strcmp(noiseType,'shared_harmful')
+              %  [act,trueOrder,orderShuff] = rep_connect('HOUSEKEEPING:shuffled_structure',act); % shuffle the order
+            else
+                spatialOrder = trueOrder;
+            end
+            data = cell(nLayer,1);
+            for i=1:nLayer
+                rUnits = randperm(size(act{i},2)); % randomise the order of units
+                act_subsets{i} = act{i}(:,rUnits(1:nUnits));
+                data{i} = repmat(act_subsets{i},nPart,1);
+            end
+            % here establish the true distance structure (Tr) when still noiseless
+            data = rep_connect('HOUSEKEEPING:removeRunMean',data,nPart,nCond);
+            Tr = rep_connect('doubleCrossval:allReg',data,nPart,nCond);
+            [Tr{4},~] = calcCKA(data,nPart,size(act{1},1),'average');    
+            for v=varReg        % within noise
+                for r=corrReg
+                    if v==0
+                        Data = data;
+                    else
+                        if strcmp(noiseType,'shared_harmful')
+                            [Data,spatialOrder] = addSharedNoise(data,v,r,noiseType);
+                            spatialOrder = squareform(pdist(spatialOrder'));
+                        else
+                            Data = addSharedNoise(data,v,r,noiseType);
+                        end
+                    end
+                    if v==0 || r==0
+                        spatialOrder = trueOrder;
+                    end
+                    Data = rep_connect('HOUSEKEEPING:removeRunMean',Data,nPart,nCond);
+                    [RDMconsist,~,Conf_corr,Conf_cos] = rdmConsist(Data,nPart,size(act_subsets{1},1));
+                    % establish metrics for noisy data
+                    Tn = rep_connect('doubleCrossval:allReg',Data,nPart,nCond);
+                    [Tn{4},~] = calcCKA(Data,nPart,size(act{1},1),'average');
+                    for i=1:size(Tn,2)
+                        V.corrNoiseless = corr(rsa_vectorizeRDM(Tr{i})',rsa_vectorizeRDM(Tn{i})');
+                        % add other info
+                        [V.true_accuOrder,V.true_countMiss,V.true_misplaced] = compareOrder(trueOrder,Tn{i});
+                        [V.spatial_accuOrder,V.spatial_countMiss,V.spatial_misplaced] = compareOrder(spatialOrder,Tn{i});
+                        NN              = construct_neighbourhood(Tn{i});
+                        V.tauTrue_NN    = corr(rsa_vectorizeRDM(trueOrder)',rsa_vectorizeRDM(NN)'); % from neighbourhood
+                        V.tauSpatial_NN = corr(rsa_vectorizeRDM(spatialOrder)',rsa_vectorizeRDM(NN)'); % correlation with spatial noise
+                        V.RDM           = rsa_vectorizeRDM(Tn{i});
+                        V.RDMconsist    = RDMconsist;
+                        V.conf_corr     = Conf_corr; % confidence estimates on connectivity
+                        V.conf_cos      = Conf_cos;
+                        V.dataType      = i; % not-crossval, crossval, double-crossval
+                        V.metricIndex   = i;
+                        V.numSim        = n;
+                        V.corrReg       = r;
+                        V.varReg        = v;
+                        VV=addstruct(VV,V);
+                    end     % data
+                    fprintf('- correlation: %d.\n',r);
+                end
+                fprintf('Variance: %d.\n',v);
+            end % variance
+            toc(tElapsed);
+        end
+        save(fullfile(baseDir,DNNname,sprintf('simulations_noise_%s_lCKA',noiseType)),'-struct','VV'); %1: 1:7:0.2:3.4 2:0:0.25:3
+        % for now - v1 with normalization, v2 without
+        fprintf('\nDone within simulations %s.\n\n',DNNname);
+        
     case 'noise:plot'
         DNNname     = 'alexnet';
         noiseType = 'within_oneNoisy'; % within, within_oneNoisy
@@ -1208,6 +1296,12 @@ switch what
         T = load(fullfile(baseDir,DNNname,sprintf('simulations_noise_%s',noiseType))); 
         T = getrow(T,T.metricIndex<8);
         style.use('FiveColours');
+        figure
+        plt.bar(T.metricIndex,T.true_accuOrder,'subset',T.varReg==2 & ismember(T.metricIndex,[1,2,4,5,7]));
+        ylabel('Accuracy');
+        ttestDirect(T.true_accuOrder,[T.metricIndex T.numSim],2,'paired','subset',T.varReg==2 & ismember(T.metricIndex,[1,2,4,5,7]));
+        ttestDirect(T.true_accuOrder,[T.metricIndex T.numSim],2,'paired','subset',T.varReg==2 & ismember(T.metricIndex,[2,5])); % RDM-corr, MVPD ns
+        
         figure
         subplot(221)
         plt.line(T.varReg,T.true_accuOrder,'split',T.metricIndex);
@@ -1237,6 +1331,7 @@ switch what
         drawline(0,'dir','horz');
         xlabel('Noise');ylabel('RDM consistency'); title('pattern consistency');
         % add lines at 1.9, 2.5, 2.7 (based on fMRI dataset)
+        keyboard;
     case 'noise:plot_shared'
         DNNname     = 'alexnet';
         noiseType = 'shared_harmful'; % within, within_oneNoisy
@@ -1989,15 +2084,15 @@ switch what
         end
         varargout{1}=actN;    
 
-    case 'test_doubleCrossval'
+    case 'doubleCrossval:no_info'
         % here test case to determine when unbiased of shared noise
-        noiseType = 'within';
+        noiseType = 'shared';
         nReg = 2;
         nPart = 4;
         nCond = 10;
         nVox = 500;
-        nSim = 100;
-        corrReg = 0;
+        nSim = 1000;
+        corrReg = 0:.1:.9;
         vararginoptions(varargin,{'nPart','nVox','noiseType','nCond','corrReg','nSim'});
         
         TT = [];
@@ -2015,8 +2110,16 @@ switch what
             end
             fprintf('Done corr %1.1f.\n',r);
         end
+        D.metric = [TT.ncv;TT.cv;TT.ccv];
+        D.type = [ones(size(TT.nSim,1),1);ones(size(TT.nSim,1),1)*2;ones(size(TT.nSim,1),1)*3];
+        D.corrReg = [TT.corrReg;TT.corrReg;TT.corrReg];
+        style.use('gray');
+        figure
+        plt.line(D.corrReg,D.metric,'split',D.type,'leg',{'non-crossval','crossval','double-crossval'});
+        hold on; drawline(0,'dir','horz');
+        xlabel('shared noise'); ylabel('estimated lCKA'); 
         keyboard;
-    case 'test_doubleCrossval_proportion'
+    case 'doubleCrossval:proportion'
         % here calculate how much of data proportion is used
         % when using ncv / cv / ccv lCKA
         % in relation to how many partitions data consists of
@@ -2036,12 +2139,33 @@ switch what
             T.type = [1;2;3];
             TT = addstruct(TT,T);
         end
+        style.use('gray_line');
         figure
         subplot(121)
-        plt.line(TT.numRun,TT.numComb,'split',TT.type);
+        plt.line(TT.numRun,TT.numComb,'split',TT.type,'leg',{'non-crossval','crossval','double-crossval'});
+        xlabel('number of partitions'); ylabel('comparisons used'); 
         subplot(122)
-        plt.line(TT.numRun,TT.proportion,'split',TT.type);
+        plt.line(TT.numRun,TT.proportion,'split',TT.type,'leg',{'non-crossval','crossval','double-crossval'});
+        ylabel('proportion of comparisons used'); 
         keyboard;
+    case 'doubleCrossval:allReg'
+        % here execute doubleCrossval (lcka) for all pairs of regions
+        data = varargin{1};
+        nPart = varargin{2};
+        nCond = varargin{3};
+        nReg = size(data,1);
+        C = indicatorMatrix('allpairs',1:nReg);
+        TT = [];
+        for i=1:size(C,1)
+            reg1 = C(i,:)==1;
+            reg2 = C(i,:)==-1;
+            T = doubleCrossval_lcka([data(reg1) data(reg2)],nPart,nCond);
+            TT = addstruct(TT,T);
+        end
+        D{1} = rsa_squareRDM(TT.ncv');
+        D{2} = rsa_squareRDM(TT.cv');
+        D{3} = rsa_squareRDM(TT.ccv');
+        varargout{1}=D;
     case 'run_job'
         rep_connect('noise:simulate','nSim',500);
         rep_connect('noise:simulate','noiseType','within_oneNoisy','nSim',500); 
@@ -2304,7 +2428,8 @@ for i=1:nLayer
     [~,ord_true] = sort(trueOrder(i,i+1:end),'ascend');
     [~,ord_est] = sort(C(i,i+1:end),'descend');
     accu(i) = sum(ord_true==ord_est);
-    countM(i) = sum(abs(ord_true-ord_est));
+    %countM(i) = sum(abs(ord_true-ord_est));
+    countM(i) = sum(ord_true~=ord_est);
     bigMiss(i) = sum(diff(ord_est)~=1);
 end
 accuOrder = sum(accu)/(nLayer*(nLayer-1)/2);
