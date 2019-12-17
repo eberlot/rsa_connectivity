@@ -822,8 +822,9 @@ switch what
             [TD{5},TD{6}] = anzellottiDist(data,nPart,size(act{1},1));  % Anzellotti
             [TD{7},~] = calcCKA(data,nPart,size(act{1},1),'average');       % lCKA
             % weighted covariances
-            varD = rsa_varianceLDC(zeros(nCond),C,eye(nCond),nPart,nUnits); % Get the variance
-            TD{8}   = cosineW(tD{3},varD);
+            %varD = rsa_varianceLDC(zeros(nCond),C,eye(nCond),nPart,nUnits); % Get the variance
+            %TD{8}   = cosineW(tD{3},varD);
+            [TD{8},~] = calcCKA(data,nPart,size(act{1},1),'crossval'); 
             for v=varReg        % within noise
                 for r=corrReg
                     if v==0
@@ -854,9 +855,12 @@ switch what
                         elseif i==6 % Anzellotti, r
                             [~,T] = anzellottiDist(Data,nPart,size(act{1},1));
                             trueD = TD{i};
-                        else
+                        elseif i==7
                             [T,~] = calcCKA(Data,nPart,size(act{1},1),'average'); 
-                           trueD = TD{i}; 
+                            trueD = TD{i}; 
+                        else
+                            [T,~] = calcCKA(Data,nPart,size(act{1},1),'crossval'); 
+                            trueD = TD{i}; 
                         end
                         V.corrNoiseless = corr(rsa_vectorizeRDM(trueD)',rsa_vectorizeRDM(T)');
                         % add other info
@@ -1225,11 +1229,6 @@ switch what
             tElapsed=tic;
             % here subsample + repeat the true pattern for each partition
             act_subsets = cell(nLayer,1);
-            if strcmp(noiseType,'shared_harmful')
-              %  [act,trueOrder,orderShuff] = rep_connect('HOUSEKEEPING:shuffled_structure',act); % shuffle the order
-            else
-                spatialOrder = trueOrder;
-            end
             data = cell(nLayer,1);
             for i=1:nLayer
                 rUnits = randperm(size(act{i},2)); % randomise the order of units
@@ -1238,12 +1237,21 @@ switch what
             end
             % here establish the true distance structure (Tr) when still noiseless
             data = rep_connect('HOUSEKEEPING:removeRunMean',data,nPart,nCond);
-            %Tr = rep_connect('doubleCrossval:allReg',data,nPart,nCond);
+    
+            [tD{1},tD{2},~,tD{3}]=rep_connect('firstLevel:calculate',data,nCond);
+            Tr{1} = rep_connect('secondLevel:calcDist',tD{1},aType{1}); % uni-corr
+            Tr{2} = rep_connect('secondLevel:calcDist',tD{2},aType{1}); % RDM-squared-corr
+            Tr{3} = rep_connect('secondLevel:calcDist',tD{3},aType{1}); % cRDM-squared-corr
+            Tr{4} = rep_connect('secondLevel:calcDist',tD{3},aType{2}); % cRDM-squared-cos
+            for nr=1:4
+                Tr{nr} = rsa_squareRDM(Tr{nr}.dist');
+            end
+            [Tr{5},~] = anzellottiDist(data,nPart,size(act{1},1));  % Anzellotti
             Tt = doubleCrossval_lcka_multiReg(data,nPart,nCond);
-            Tr{1} = Tt.ncv;
-            Tr{2} = Tt.cv;
-            Tr{3} = Tt.ccv;
-            [Tr{4},~] = calcCKA(data,nPart,size(act{1},1),'average');    
+            Tr{6} = Tt.ncv;
+            Tr{7} = Tt.cv;
+            Tr{8} = Tt.ccv;
+            [Tr{9},~] = calcCKA(data,nPart,size(act{1},1),'average');       
             for v=varReg        % within noise
                 for r=corrReg
                     if v==0
@@ -1262,12 +1270,20 @@ switch what
                     Data = rep_connect('HOUSEKEEPING:removeRunMean',Data,nPart,nCond);
                     [RDMconsist,~,Conf_corr,Conf_cos] = rdmConsist(Data,nPart,size(act_subsets{1},1));
                     % establish metrics for noisy data
+                    [tD{1},tD{2},~,tD{3}]=rep_connect('firstLevel:calculate',data,nCond);
+                    Tn{1} = rep_connect('secondLevel:calcDist',tD{1},aType{1}); % uni-corr
+                    Tn{2} = rep_connect('secondLevel:calcDist',tD{2},aType{1}); % RDM-squared-corr
+                    Tn{3} = rep_connect('secondLevel:calcDist',tD{3},aType{1}); % cRDM-squared-corr
+                    Tn{4} = rep_connect('secondLevel:calcDist',tD{3},aType{2}); % cRDM-squared-cos
+                    for nr=1:4
+                        Tn{nr} = rsa_squareRDM(Tn{nr}.dist');
+                    end
+                    [Tn{5},~] = anzellottiDist(data,nPart,size(act{1},1));  % Anzellotti
                     Tt = doubleCrossval_lcka_multiReg(data,nPart,nCond);
-                    Tn{1} = Tt.ncv;
-                    Tn{2} = Tt.cv;
-                    Tn{3} = Tt.ccv;
-                    %Tn = rep_connect('doubleCrossval:allReg',Data,nPart,nCond);
-                    [Tn{4},~] = calcCKA(Data,nPart,size(act{1},1),'average');
+                    Tn{6} = Tt.ncv;
+                    Tn{7} = Tt.cv;
+                    Tn{8} = Tt.ccv;
+                    [Tn{9},~] = calcCKA(Data,nPart,size(act{1},1),'average');
                     for i=1:size(Tn,2)
                         V.corrNoiseless = corr(rsa_vectorizeRDM(Tr{i})',rsa_vectorizeRDM(Tn{i})');
                         % add other info
@@ -2097,13 +2113,13 @@ switch what
     case 'doubleCrossval:no_info'
         % here test case to determine when unbiased of shared noise
         noiseType = 'shared';
-        nReg = 2;
+        nReg = 3;
         nPart = 4;
         nCond = 10;
         nVox = 500;
         nSim = 1000;
         corrReg = 0:.1:.9;
-        vararginoptions(varargin,{'nPart','nVox','noiseType','nCond','corrReg','nSim'});
+        vararginoptions(varargin,{'nPart','nVox','noiseType','nCond','corrReg','nSim','nReg'});
         
         TT = [];
         for n=1:nReg
@@ -2113,7 +2129,11 @@ switch what
             for n = 1:nSim
                 Data = addSharedNoise(data,5,r,noiseType);
                 Data = rep_connect('HOUSEKEEPING:removeRunMean',Data,nPart,nCond);
-                T = doubleCrossval_lcka(Data,nPart,nCond);
+                %T = doubleCrossval_lcka(Data,nPart,nCond);
+                TD = doubleCrossval_lcka_multiReg(Data,nPart,nCond);
+                T.ncv = TD.ncv(1,2);
+                T.cv = TD.cv(1,2); 
+                T.ccv = TD.ccv(1,2); 
                 T.nSim = n;
                 T.corrReg = r;
                 TT = addstruct(TT,T);
@@ -2176,7 +2196,9 @@ switch what
         D{2} = rsa_squareRDM(TT.cv');
         D{3} = rsa_squareRDM(TT.ccv');
         varargout{1}=D;
+    
     case 'run_job'
+        rep_connect('noise:simulate_shared_doubleCross','nSim',10,'corrReg',0:.2:.8,'varReg',0:.5:6);
         rep_connect('noise:simulate','noiseType','within','nSim',1000); 
         rep_connect('noise:simulate_shared_doubleCross','nSim',100,'corrReg',0:.1:.9,'varReg',[0:.25:6,7:1:10]);
         rep_connect('noise:simulate','noiseType','within_oneNoisy','nSim',1000); 

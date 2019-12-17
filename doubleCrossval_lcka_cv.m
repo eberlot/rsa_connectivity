@@ -1,6 +1,7 @@
-function lCKA_dcv = doubleCrossval_lcka_multiReg(Data,nPart,nCond)
-%function lCKA_dcv = doubleCrossval_lcka_multiReg(Data,nPart,nPart)
+function lCKA_dcv = doubleCrossval_lcka_cv(Data,nPart,nCond)
+%function lCKA_dcv = doubleCrossval_lcka_multiReg_cv(Data,nPart,nPart)
 % calculates lCKA in different ways across two regions
+% only double crossvalidated version
 % INPUT:
 %       - Data - cell (nReg x 1) - for now only works if nReg = 2
 %       - nPart - number of partiitons
@@ -14,8 +15,8 @@ for r=1:nReg
 end
 partVec = kron((1:nPart)',ones(nCond,1));
 ind = nchoosek(1:nPart,2);
-id1 = [ind;fliplr(ind);[(1:nPart)' (1:nPart)']];
-id2 = [ind;ind;[(1:nPart)' (1:nPart)']];
+id1 = [ind;fliplr(ind)];
+id2 = [ind;ind];
 nComb = size(id1,1);
 idx=1;
 ind1 = zeros(nComb*nComb,2);
@@ -27,33 +28,12 @@ for p1=1:nComb
         idx=idx+1;
     end
 end
-% 
-% ind = [ind;[(1:nPart)' (1:nPart)']];
-% nComb = size(ind,1);
-% % pre-define all combinations
-% ind1 = zeros(nComb*(nComb+1)/2,2); ind2=ind1;
-% idx=1;
-% for p1=1:nComb
-%     for p2=1:nComb
-%         for v=1:2 % reg 1 treated twice (upper and lower triangular)
-%             if v==1
-%                 ind1(idx,:) = [ind(p1,1) ind(p1,2)];
-%             else
-%                 ind1(idx,:) = [ind(p1,2) ind(p1,1)];
-%             end
-%             ind2(idx,:) = [ind(p2,1) ind(p2,2)];
-%             idx=idx+1;
-%         end
-%     end
-% end
-% ind1 = [ind1;[(1:nPart)' (1:nPart)']];
-% ind2 = [ind2;[(1:nPart)' (1:nPart)']];
-% lcka = zeros(nReg,nReg,size(ind1,1));
-t = [ind1 ind2];
+idx_ccv = ind1(:,1)~=ind1(:,2) & ind2(:,1)~=ind2(:,2) & sum(ind1==ind2,2)~=2 & sum(fliplr(ind1)==ind2,2)~=2; % double crossvalidated
+t = [ind1(idx_ccv==1,:) ind2(idx_ccv==1,:)];
 t = unique(t,'rows');
 ind1 = t(:,1:2);
 ind2 = t(:,3:4);
-% fprintf('\nCalculating connectivity for region:\n');
+fprintf('\nCalculating connectivity for region:\n');
 lcka = zeros(nReg,nReg,size(ind1,1));
 for r=1:nReg
     reg1 = r;
@@ -70,11 +50,6 @@ for r=1:nReg
         C=sum(bsxfun(@times,A,B)); % correlation
         lcka(reg1,reg2,i)=C;
     end
-%fprintf('%d.',r);
+fprintf('%d.',r);
 end
-% here indices for crossvalidated version and double crossvalidated
-idx_cv = ind1(:,1)~=ind1(:,2) & ind2(:,1)~=ind2(:,2); % crossvalidated
-idx_ccv = ind1(:,1)~=ind1(:,2) & ind2(:,1)~=ind2(:,2) & sum(ind1==ind2,2)~=2 & sum(fliplr(ind1)==ind2,2)~=2; % double crossvalidated
 lCKA_dcv.ncv = mean(lcka,3);
-lCKA_dcv.cv = mean(lcka(:,:,idx_cv),3);
-lCKA_dcv.ccv = mean(lcka(:,:,idx_ccv),3);
