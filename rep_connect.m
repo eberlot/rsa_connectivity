@@ -1238,7 +1238,11 @@ switch what
             end
             % here establish the true distance structure (Tr) when still noiseless
             data = rep_connect('HOUSEKEEPING:removeRunMean',data,nPart,nCond);
-            Tr = rep_connect('doubleCrossval:allReg',data,nPart,nCond);
+            %Tr = rep_connect('doubleCrossval:allReg',data,nPart,nCond);
+            Tt = doubleCrossval_lcka_multiReg(data,nPart,nCond);
+            Tr{1} = Tt.ncv;
+            Tr{2} = Tt.cv;
+            Tr{3} = Tt.ccv;
             [Tr{4},~] = calcCKA(data,nPart,size(act{1},1),'average');    
             for v=varReg        % within noise
                 for r=corrReg
@@ -1258,7 +1262,11 @@ switch what
                     Data = rep_connect('HOUSEKEEPING:removeRunMean',Data,nPart,nCond);
                     [RDMconsist,~,Conf_corr,Conf_cos] = rdmConsist(Data,nPart,size(act_subsets{1},1));
                     % establish metrics for noisy data
-                    Tn = rep_connect('doubleCrossval:allReg',Data,nPart,nCond);
+                    Tt = doubleCrossval_lcka_multiReg(data,nPart,nCond);
+                    Tn{1} = Tt.ncv;
+                    Tn{2} = Tt.cv;
+                    Tn{3} = Tt.ccv;
+                    %Tn = rep_connect('doubleCrossval:allReg',Data,nPart,nCond);
                     [Tn{4},~] = calcCKA(Data,nPart,size(act{1},1),'average');
                     for i=1:size(Tn,2)
                         V.corrNoiseless = corr(rsa_vectorizeRDM(Tr{i})',rsa_vectorizeRDM(Tn{i})');
@@ -1334,14 +1342,16 @@ switch what
         keyboard;
     case 'noise:plot_shared'
         DNNname     = 'alexnet';
-        noiseType = 'shared_harmful'; % within, within_oneNoisy
+        noiseType = 'shared_harmful_lCKA'; % within, within_oneNoisy
         vararginoptions(varargin,{'DNNname','noiseType'});
         T = load(fullfile(baseDir,DNNname,sprintf('simulations_noise_%s',noiseType))); 
         T = getrow(T,T.metricIndex<8);
-        style.use('FourColours');
+        %style.use('FourColours');
+        style.use('gray');
         corrR = unique(T.corrReg)';
         for i=corrR
-            t = getrow(T,ismember(T.metricIndex,[2,4,5,7]) & T.corrReg==i);
+            %t = getrow(T,ismember(T.metricIndex,[2,4,5,7]) & T.corrReg==i);
+            t = getrow(T,T.corrReg==i&T.metricIndex<4);
 %             figure
 %             subplot(131)
 %             plt.line(t.varReg,t.true_accuOrder,'split',t.metricIndex); ylabel('True order');
@@ -2167,9 +2177,10 @@ switch what
         D{3} = rsa_squareRDM(TT.ccv');
         varargout{1}=D;
     case 'run_job'
-        rep_connect('noise:simulate','nSim',500);
-        rep_connect('noise:simulate','noiseType','within_oneNoisy','nSim',500); 
-        rep_connect('noise:simulate','noiseType','shared_harmful','nSim',100,'corrReg',0:.1:.9,'varReg',0:.25:4);
+        rep_connect('noise:simulate','noiseType','within','nSim',1000); 
+        rep_connect('noise:simulate_shared_doubleCross','nSim',100,'corrReg',0:.1:.9,'varReg',[0:.25:6,7:1:10]);
+        rep_connect('noise:simulate','noiseType','within_oneNoisy','nSim',1000); 
+        rep_connect('noise:simulate_shared_doubleCross','nSim',500,'corrReg',0:.1:.9,'varReg',[0:.25:6,7:1:10]);
         
     otherwise 
         fprintf('no such case!\n');
