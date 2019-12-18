@@ -2113,7 +2113,8 @@ switch what
 
     case 'doubleCrossval:no_info'
         % here test case to determine when unbiased of shared noise
-        noiseType = 'shared';
+        %noiseType = 'shared';
+        noiseType = 'shared_harmful';
         nReg = 3;
         nPart = 4;
         nCond = 10;
@@ -2203,8 +2204,8 @@ switch what
     case 'run_job'
         rep_connect('noise:simulate','noiseType','within','nSim',1000);   
         rep_connect('noise:simulate','noiseType','within_oneNoisy','nSim',1000); 
-        %rep_connect('noise:simulate_shared_doubleCross','nSim',100,'corrReg',0:.2:.8,'varReg',[0:.25:6,7:1:10]);
-        %rep_connect('noise:simulate_shared_doubleCross','nSim',500,'corrReg',0:.2:.8,'varReg',[0:.25:6,7:1:10]);
+        rep_connect('noise:simulate_shared_doubleCross','nSim',100,'corrReg',0:.2:.8,'varReg',[0:.25:6,7:1:10]);
+        rep_connect('noise:simulate_shared_doubleCross','nSim',500,'corrReg',0:.2:.8,'varReg',[0:.25:6,7:1:10]);
         
     otherwise 
         fprintf('no such case!\n');
@@ -2243,6 +2244,8 @@ function [data,spatOrder] = addSharedNoise(data,Var,r,noiseType)
     nDataset = size(data,1);
     nTrials = size(data{1},1);
     nVox    = size(data{1},2);
+    nPart = 8;
+    nCond = nTrials/nPart;
     spatOrder = [];
     % add shared noise (shared within / across regions)
     Z = normrnd(0,1,nTrials,nDataset*nVox);
@@ -2290,7 +2293,10 @@ function [data,spatOrder] = addSharedNoise(data,Var,r,noiseType)
             dist        = pdist(t');
             noiseKernel = exp((-0.5*dist)/kernelWidth);
             P           = squareform(noiseKernel);
-            Zn          = Z*P;
+            for i=1:nPart
+                Zn((i-1)*nCond+1:(i*nCond),:)=Z((i-1)*nCond+1:(i*nCond),:)*P;
+            end
+            %Zn          = Z*P;
             % modulate the relative strength of the shared noise 
             Zn = Zn./max(max(Zn));
             Zn = Z.*(1-r)+(Zn.*r);
