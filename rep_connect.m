@@ -1270,7 +1270,7 @@ switch what
                     Data = rep_connect('HOUSEKEEPING:removeRunMean',Data,nPart,nCond);
                     [RDMconsist,~,Conf_corr,Conf_cos] = rdmConsist(Data,nPart,size(act_subsets{1},1));
                     % establish metrics for noisy data
-                    [tD{1},tD{2},~,tD{3}]=rep_connect('firstLevel:calculate',data,nCond);
+                    [tD{1},tD{2},~,tD{3}]=rep_connect('firstLevel:calculate',Data,nCond);
                     Tn{1} = rep_connect('secondLevel:calcDist',tD{1},aType{1}); % uni-corr
                     Tn{2} = rep_connect('secondLevel:calcDist',tD{2},aType{1}); % RDM-squared-corr
                     Tn{3} = rep_connect('secondLevel:calcDist',tD{3},aType{1}); % cRDM-squared-corr
@@ -1278,8 +1278,8 @@ switch what
                     for nr=1:4
                         Tn{nr} = rsa_squareRDM(Tn{nr}.dist');
                     end
-                    [Tn{5},~] = anzellottiDist(data,nPart,size(act{1},1));  % Anzellotti
-                    Tt = doubleCrossval_lcka_multiReg(data,nPart,nCond);
+                    [Tn{5},~] = anzellottiDist(Data,nPart,size(act{1},1));  % Anzellotti
+                    Tt = doubleCrossval_lcka_multiReg(Data,nPart,nCond);
                     Tn{6} = Tt.ncv;
                     Tn{7} = Tt.cv;
                     Tn{8} = Tt.ccv;
@@ -1367,7 +1367,8 @@ switch what
         corrR = unique(T.corrReg)';
         for i=corrR
             %t = getrow(T,ismember(T.metricIndex,[2,4,5,7]) & T.corrReg==i);
-            t = getrow(T,T.corrReg==i&T.metricIndex<4);
+            %t = getrow(T,T.corrReg==i&T.metricIndex<4);
+            t = getrow(T,T.corrReg==i);
 %             figure
 %             subplot(131)
 %             plt.line(t.varReg,t.true_accuOrder,'split',t.metricIndex); ylabel('True order');
@@ -2133,16 +2134,18 @@ switch what
                 TD = doubleCrossval_lcka_multiReg(Data,nPart,nCond);
                 T.ncv = TD.ncv(1,2);
                 T.cv = TD.cv(1,2); 
-                T.ccv = TD.ccv(1,2); 
+                T.ccv = TD.ccv(1,2);
+                cka = calcCKA(Data,nPart,nCond,'average');
+                T.average = cka(1,2);
                 T.nSim = n;
                 T.corrReg = r;
                 TT = addstruct(TT,T);
             end
             fprintf('Done corr %1.1f.\n',r);
         end
-        D.metric = [TT.ncv;TT.cv;TT.ccv];
-        D.type = [ones(size(TT.nSim,1),1);ones(size(TT.nSim,1),1)*2;ones(size(TT.nSim,1),1)*3];
-        D.corrReg = [TT.corrReg;TT.corrReg;TT.corrReg];
+        D.metric = [TT.ncv;TT.cv;TT.ccv;TT.average];
+        D.type = [ones(size(TT.nSim,1),1);ones(size(TT.nSim,1),1)*2;ones(size(TT.nSim,1),1)*3;ones(size(TT.nSim,1),1)*4];
+        D.corrReg = [TT.corrReg;TT.corrReg;TT.corrReg;TT.corrReg];
         style.use('gray');
         figure
         plt.line(D.corrReg,D.metric,'split',D.type,'leg',{'non-crossval','crossval','double-crossval'});
@@ -2198,11 +2201,10 @@ switch what
         varargout{1}=D;
     
     case 'run_job'
-        rep_connect('noise:simulate_shared_doubleCross','nSim',10,'corrReg',0:.2:.8,'varReg',0:.5:6);
-        rep_connect('noise:simulate','noiseType','within','nSim',1000); 
-        rep_connect('noise:simulate_shared_doubleCross','nSim',100,'corrReg',0:.1:.9,'varReg',[0:.25:6,7:1:10]);
+        rep_connect('noise:simulate','noiseType','within','nSim',1000);   
         rep_connect('noise:simulate','noiseType','within_oneNoisy','nSim',1000); 
-        rep_connect('noise:simulate_shared_doubleCross','nSim',500,'corrReg',0:.1:.9,'varReg',[0:.25:6,7:1:10]);
+        %rep_connect('noise:simulate_shared_doubleCross','nSim',100,'corrReg',0:.2:.8,'varReg',[0:.25:6,7:1:10]);
+        %rep_connect('noise:simulate_shared_doubleCross','nSim',500,'corrReg',0:.2:.8,'varReg',[0:.25:6,7:1:10]);
         
     otherwise 
         fprintf('no such case!\n');

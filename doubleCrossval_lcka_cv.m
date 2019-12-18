@@ -52,4 +52,4 @@ for r=1:nReg
     end
 fprintf('%d.',r);
 end
-lCKA_dcv.ncv = mean(lcka,3);
+lCKA_dcv = mean(lcka,3);
