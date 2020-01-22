@@ -1361,7 +1361,7 @@ switch what
         noiseType = 'shared_harmful_lCKA'; % within, within_oneNoisy
         vararginoptions(varargin,{'DNNname','noiseType'});
         T = load(fullfile(baseDir,DNNname,sprintf('simulations_noise_%s',noiseType))); 
-        T = getrow(T,T.metricIndex<8);
+        %T = getrow(T,T.metricIndex<8);
         %style.use('FourColours');
         style.use('gray');
         corrR = unique(T.corrReg)';
@@ -1397,6 +1397,15 @@ switch what
             figure(500)
             subplot(numel(corrR),2,(find((corrR==i))-1)*2+1)
             plt.line(t.varReg,t.tauTrue_NN,'split',t.metricIndex); ylabel('True order');
+            hold on; drawline(0,'dir','horz');
+            title(sprintf('corr %1.1f',i));
+            subplot(numel(corrR),2,(find((corrR==i))-1)*2+2)
+            plt.line(t.varReg,t.tauSpatial_NN,'split',t.metricIndex); ylabel('Spatial order');
+            hold on; drawline(0,'dir','horz');
+            
+            figure(501)
+            subplot(numel(corrR),2,(find((corrR==i))-1)*2+1)
+            plt.line(t.varReg,t.tauTrue_NN,'split',t.metricIndex,'subset',t.metricIndex>1); ylabel('True order');
             hold on; drawline(0,'dir','horz');
             title(sprintf('corr %1.1f',i));
             subplot(numel(corrR),2,(find((corrR==i))-1)*2+2)
@@ -2113,6 +2122,7 @@ switch what
 
     case 'doubleCrossval:no_info'
         % here test case to determine when unbiased of shared noise
+        % in the case where no information is present
         %noiseType = 'shared';
         noiseType = 'shared_harmful';
         nReg = 3;
@@ -2149,11 +2159,41 @@ switch what
         D.corrReg = [TT.corrReg;TT.corrReg;TT.corrReg;TT.corrReg];
         style.use('gray');
         figure
-        plt.line(D.corrReg,D.metric,'split',D.type,'leg',{'non-crossval','crossval','double-crossval'});
+        %plt.line(D.corrReg,D.metric,'split',D.type,'leg',{'non-crossval','crossval','double-crossval'});
+        plt.line(D.corrReg,D.metric,'split',D.type,'subset',D.type<4,'leg',{'non-crossval','crossval','double-crossval'});
         hold on; drawline(0,'dir','horz');
         xlabel('shared noise'); ylabel('estimated lCKA'); 
         keyboard;
     case 'doubleCrossval:proportion'
+        % here calculate how much of data proportion is used
+        % when using ncv / cv / ccv lCKA
+        % in relation to how many partitions data consists of
+        nPart = 3:20;
+        vararginoptions(varargin,{'nPart'});
+        TT = [];
+        for p=nPart
+            ncv1 = p*p; % how many pairs for one region - not crossval
+            ncv2 = ncv1*(ncv1-(p*(p-1)/2));
+            cv1 = p*(p-1); % crossval
+            cv2 = cv1*cv1/2;
+            ccv1 = cv1; % double-crossval
+            ccv2 = cv2 - ccv1;
+            T.numRun = [p;p;p];
+            T.numComb = [ncv2;cv2;ccv2];
+            T.proportion = [1;cv2/ncv2;ccv2/ncv2];
+            T.type = [1;2;3];
+            TT = addstruct(TT,T);
+        end
+        style.use('gray_line');
+        figure
+        subplot(121)
+        plt.line(TT.numRun,TT.numComb,'split',TT.type,'leg',{'non-crossval','crossval','double-crossval'});
+        xlabel('number of partitions'); ylabel('comparisons used'); 
+        subplot(122)
+        plt.line(TT.numRun,TT.proportion,'split',TT.type,'leg',{'non-crossval','crossval','double-crossval'});
+        ylabel('proportion of comparisons used'); 
+        keyboard;
+    case 'doubleCrossval:proportion_old'
         % here calculate how much of data proportion is used
         % when using ncv / cv / ccv lCKA
         % in relation to how many partitions data consists of
@@ -2202,10 +2242,10 @@ switch what
         varargout{1}=D;
     
     case 'run_job'
-        rep_connect('noise:simulate','noiseType','within','nSim',1000);   
-        rep_connect('noise:simulate','noiseType','within_oneNoisy','nSim',1000); 
-        rep_connect('noise:simulate_shared_doubleCross','nSim',100,'corrReg',0:.2:.8,'varReg',[0:.25:6,7:1:10]);
-        rep_connect('noise:simulate_shared_doubleCross','nSim',500,'corrReg',0:.2:.8,'varReg',[0:.25:6,7:1:10]);
+        %rep_connect('noise:simulate','noiseType','within','nSim',1000);   
+        rep_connect('noise:simulate','noiseType','within_oneNoisy','nSim',500); 
+        %rep_connect('noise:simulate_shared_doubleCross','nSim',100,'corrReg',0:.2:.8,'varReg',[0:.25:6,7:1:10]);
+        %rep_connect('noise:simulate_shared_doubleCross','nSim',500,'corrReg',0:.2:.8,'varReg',[0:.25:6,7:1:10]);
         
     otherwise 
         fprintf('no such case!\n');

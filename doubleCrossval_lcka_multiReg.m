@@ -2,9 +2,15 @@ function lCKA_dcv = doubleCrossval_lcka_multiReg(Data,nPart,nCond)
 %function lCKA_dcv = doubleCrossval_lcka_multiReg(Data,nPart,nPart)
 % calculates lCKA in different ways across two regions
 % INPUT:
-%       - Data - cell (nReg x 1) - for now only works if nReg = 2
-%       - nPart - number of partiitons
+%       - Data - cell (nReg x 1) 
+%       - nPart - number of partititons
 %       - nCond - number of conditions
+% OUTPUT:
+%       - structure lCKA_dcv with fields
+%           * ncv - not crossvalidated version
+%           * cv  - crossvalidated (on the level of regions)
+%           * dcv - double crossvalidated (within and across regions)
+%
 
 % here calculate Gs for each region
 nReg = size(Data,1);
@@ -27,28 +33,6 @@ for p1=1:nComb
         idx=idx+1;
     end
 end
-% 
-% ind = [ind;[(1:nPart)' (1:nPart)']];
-% nComb = size(ind,1);
-% % pre-define all combinations
-% ind1 = zeros(nComb*(nComb+1)/2,2); ind2=ind1;
-% idx=1;
-% for p1=1:nComb
-%     for p2=1:nComb
-%         for v=1:2 % reg 1 treated twice (upper and lower triangular)
-%             if v==1
-%                 ind1(idx,:) = [ind(p1,1) ind(p1,2)];
-%             else
-%                 ind1(idx,:) = [ind(p1,2) ind(p1,1)];
-%             end
-%             ind2(idx,:) = [ind(p2,1) ind(p2,2)];
-%             idx=idx+1;
-%         end
-%     end
-% end
-% ind1 = [ind1;[(1:nPart)' (1:nPart)']];
-% ind2 = [ind2;[(1:nPart)' (1:nPart)']];
-% lcka = zeros(nReg,nReg,size(ind1,1));
 t = [ind1 ind2];
 t = unique(t,'rows');
 ind1 = t(:,1:2);
@@ -70,7 +54,6 @@ for r=1:nReg
         C=sum(bsxfun(@times,A,B)); % correlation
         lcka(reg1,reg2,i)=C;
     end
-%fprintf('%d.',r);
 end
 % here indices for crossvalidated version and double crossvalidated
 idx_cv = ind1(:,1)~=ind1(:,2) & ind2(:,1)~=ind2(:,2); % crossvalidated
