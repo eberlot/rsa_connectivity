@@ -28,12 +28,16 @@ inputSize = net.Layers(1).InputSize;
 
 %% load & prepare images
 % load images
-files = get_files(imagePath,'*.BMP');
+%files = get_files(imagePath,'*.BMP');
+%files = [files; get_files(imagePath,'*.bmp')];
+cd(imagePath);
+files = dir('*.BMP');
+files = [files;dir('*.bmp')];
 nImages = size(files,1);
 images = nan(inputSize(1),inputSize(2),inputSize(3),nImages); % assume images are RGB
 images = single(images);
 for imageI = 1:nImages
-    im = imread(files(imageI,:));
+    im = imread(fullfile(imagePath,files(imageI).name));
     if monitor, figure(10); imshow(im); title('original'); end
     % resize image if needed
     if size(im,1) ~= inputSize(1) || size(im,2) ~= inputSize(2)
@@ -74,11 +78,14 @@ for imageI = 1:nImages
     [~,idx] = sort(scores,'descend');
     idx = idx(1:5);
     top5 = net.Layers(end).ClassNames(idx);
-    [pth,fle,ext] = fileparts(files(imageI,:));
-    save(fullfile(resultsPath,fle),'im','acti','scores','top5');
+    %[pth,fle,ext] = fileparts(files(imageI,:));
+    [pth,fle,ext] = fileparts(fullfile(imagePath,files(imageI).name));
+    fileN = fullfile(sprintf('image%s',fle));
+    %save(fullfile(resultsPath,fle),'im','acti','scores','top5');
+    save(fullfile(resultsPath,fileN),'im','acti','scores','top5');
     % print top5 to text file
     formatSpec1 = '%s\n'; formatSpec2 = '%s\n\n';
-    fprintf(fileID,formatSpec1,[fle,ext]); 
+    %fprintf(fileID,formatSpec1,[fle,ext]); 
     for labelI = 1:numel(idx) 
         if labelI < numel(idx), fprintf(fileID,formatSpec1,top5{labelI}); 
         else fprintf(fileID,formatSpec2,top5{labelI}); end 

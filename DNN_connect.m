@@ -2216,10 +2216,12 @@ switch what
 
     case 'generate:truePatterns'
         % no noise added
-        DNNname = 'alexnet';
+        %DNNname = 'alexnet';
+        DNNname = 'alexnet-62';
         vararginoptions(varargin,{'DNNname'});
         resultsPath = fullfile(baseDir,DNNname,'trueActivation'); 
-        getNetActivations('alexnet',fullfile(baseDir,'96images'),resultsPath,0); % generate patterns
+        %getNetActivations('alexnet',fullfile(baseDir,'96images'),resultsPath,0); % generate patterns
+        getNetActivations('alexnet',fullfile(baseDir,'62images'),resultsPath,0); % generate patterns
         create_DNN_trueActivation(DNNname,baseDir); % restructure them into one cell
         fprintf('Done: %s true patterns generated.\n',DNNname);
     case 'generate:noisyPatterns'

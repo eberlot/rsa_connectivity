@@ -466,11 +466,11 @@ switch what
         end
         varargout{1}=A; % connectivity matrix
         varargout{2}=Conf; % confidence matrix
-    case 'noiseless:constructTruth_allUnits'
+    case 'noiseless:constructTruth_allUnits' % in use
         % here plot the obtained connectivity for all metrics with no noise
         % using all units here
         nPart       = 8;
-        DNNname     = 'alexnet';
+        DNNname     = 'alexnet'; % alexnet or alexnet-62
         vararginoptions(varargin,{'nUnits','DNNname'});
         
         load(fullfile(baseDir,DNNname,sprintf('%s_activations',DNNname))); % load in activations
@@ -1367,33 +1367,8 @@ switch what
         corrR = unique(T.corrReg)';
         for i=corrR
             %t = getrow(T,ismember(T.metricIndex,[2,4,5,7]) & T.corrReg==i);
-            %t = getrow(T,T.corrReg==i&T.metricIndex<4);
-            t = getrow(T,T.corrReg==i);
-%             figure
-%             subplot(131)
-%             plt.line(t.varReg,t.true_accuOrder,'split',t.metricIndex); ylabel('True order');
-%             subplot(132)
-%             plt.line(t.varReg,t.corrNoiseless,'split',t.metricIndex); ylabel('Noiseless corr');
-%             subplot(133)
-%             plt.line(t.varReg,t.true_misplaced,'split',t.metricIndex); ylabel('Positions missed');
-%             
-%             figure
-%             subplot(221)
-%             plt.line(t.varReg,t.true_accuOrder,'split',t.metricIndex); ylabel('True order');
-%             subplot(222)
-%             plt.line(t.varReg,t.spatial_accuOrder,'split',t.metricIndex); ylabel('Spatial order');
-%             subplot(223)
-%             plt.line(t.varReg,t.true_misplaced,'split',t.metricIndex); ylabel('Positions missed from truth');
-%             subplot(224)
-%             plt.line(t.varReg,t.spatial_misplaced,'split',t.metricIndex); ylabel('Positions missed from spatial struct');
-%             
-%             figure
-%             subplot(121)
-%             plt.line(t.varReg,t.tauTrue_NN,'split',t.metricIndex); ylabel('True order - neighbourhood');
-%             subplot(122)
-%             plt.line(t.varReg,t.tauSpatial_NN,'split',t.metricIndex); ylabel('Spatial order - neighbourhood');
-%             
-%             
+            %t = getrow(T,T.corrReg==i & ismember(T.metricIndex,[3,4,5,6,8]));
+            t = getrow(T,T.corrReg==i);  
             figure(500)
             subplot(numel(corrR),2,(find((corrR==i))-1)*2+1)
             plt.line(t.varReg,t.tauTrue_NN,'split',t.metricIndex); ylabel('True order');
@@ -2242,9 +2217,9 @@ switch what
         varargout{1}=D;
     
     case 'run_job'
-        %rep_connect('noise:simulate','noiseType','within','nSim',1000);   
+        rep_connect('noise:simulate','noiseType','within','nSim',500,'DNNname','alexnet-62');   
         rep_connect('noise:simulate','noiseType','within_oneNoisy','nSim',500); 
-        %rep_connect('noise:simulate_shared_doubleCross','nSim',100,'corrReg',0:.2:.8,'varReg',[0:.25:6,7:1:10]);
+        rep_connect('noise:simulate_shared_doubleCross','nSim',100,'corrReg',[0,.2,.4,.8],'varReg',[0:.25:6,7:1:10]);
         %rep_connect('noise:simulate_shared_doubleCross','nSim',500,'corrReg',0:.2:.8,'varReg',[0:.25:6,7:1:10]);
         
     otherwise 
