@@ -773,12 +773,13 @@ switch what
     case 'noise:simulate_within'
         % include only metrics that will be used for OHBM
         nPart       = 8;
-        nSim        = 59;
+        nSim        = 50;
         nUnits      = 500;
         noiseType   = 'within_low'; % allEqual or neighbours
-        DNNname     = 'alexnet';
+        DNNname     = 'alexnet-62';
+        nLoop       = 9:20;
         varReg = [0,1.7:0.2:3.5];
-        vararginoptions(varargin,{'nPart','nSim','noiseType','dataType','DNNname','varReg'});
+        vararginoptions(varargin,{'nPart','nSim','noiseType','dataType','DNNname','varReg','nLoop'});
         % initialize
         % 1) corr with uni; 2) corr with RDM-squared; 3) corr with RDM-sqrt;
         % 4) corr with cRDM-squared; 5) cos with cRDM-squared;
@@ -797,78 +798,79 @@ switch what
         act = DNN_connect('HOUSEKEEPING:normalizeUnits',act); % keep this in for nowq
         trueOrder = squareform(pdist((1:nLayer)'));
         
-        corrReg = 0;
-        VV=[];
-        
-        if exist(fullfile(baseDir,DNNname,'simulations_noise_within'),'file')% check if the file exists
-            fprintf('This simulation of %s within already exists - skipping...\n',DNNname);
-        else
-            for n=1:nSim    % number of simulations
-                fprintf('\nSimulation %d:\n',n);
-                tElapsed=tic;
-                % here subsample + repeat the true pattern for each partition
-                act_subsets = cell(nLayer,1);
-                data = cell(nLayer,1);
-                for i=1:nLayer
-                    rUnits = randperm(size(act{i},2)); % randomise the order of units
-                    act_subsets{i} = act{i}(:,rUnits(1:nUnits));
-                    data{i} = repmat(act_subsets{i},nPart,1);
-                end
-                % here establish the true distance structure (TD)
-                % when still noiseless
-                [tD{1},tD{2},tD{3},~,~,~,~]=DNN_connect('firstLevel:calculate',data,nCond);
-                TD{1} = DNN_connect('secondLevel:calcDist',tD{1},aType{1}); % uni-corr
-                TD{2} = DNN_connect('secondLevel:calcDist',tD{2},aType{1}); % RDM-squared-corr
-                % TD{3} = DNN_connect('secondLevel:calcDist',tD{3},aType{1}); % RDM-sqrt-corr
-                TD{3} = DNN_connect('secondLevel:calcDist',tD{2},aType{2}); % RDM-squared-cos
-                %  TD{5} = DNN_connect('secondLevel:calcDist',tD{3},aType{2}); % RDM-sqrt-cos
-                TD{4} = anzellottiDist(data,nPart,size(act{1},1));       % Anzellotti
-                for v=varReg        % within noise
-                    if v==0
-                        corR=0;
-                    else
-                        corR=corrReg;
+        corrReg = 0;        
+        for ll=nLoop
+            VV = [];
+            if exist(fullfile(baseDir,DNNname,sprintf('simulations_noise_within_sim-%d',ll)),'file')% check if the file exists
+                fprintf('This simulation of %s within already exists - skipping...\n',DNNname);
+            else
+                for n=1:nSim    % number of simulations
+                    fprintf('\nSimulation %d:\n',n);
+                    tElapsed=tic;
+                    % here subsample + repeat the true pattern for each partition
+                    act_subsets = cell(nLayer,1);
+                    data = cell(nLayer,1);
+                    for i=1:nLayer
+                        rUnits = randperm(size(act{i},2)); % randomise the order of units
+                        act_subsets{i} = act{i}(:,rUnits(1:nUnits));
+                        data{i} = repmat(act_subsets{i},nPart,1);
                     end
-                    for r=corR         % correlated noise
-                        Data = addSharedNoise(data,v,r,noiseType);
-                        [RDMconsist,~,Conf_corr,Conf_cos] = rdmConsist(Data,nPart,size(act_subsets{1},1));
-                        [fD{1},fD{2},~,fD{3},~,~,~]=DNN_connect('firstLevel:calculate',Data,nCond);
-                        % order: uni, RDM, RDM_sqrt, cRDM, cRDM_sqrt
-                        % cycle around all combinations of data / metrics
-                        for i=1:length(dataInd)
-                            if dataInd(i) < 4
-                                t = DNN_connect('secondLevel:calcDist',fD{dataInd(i)},aType{alphaInd(i)});
-                                T = rsa_squareRDM(t.dist');
-                                trueD = rsa_squareRDM(TD{RDMInd(i)}.dist');
-                            else % Anzellotti
-                                T = anzellottiDist(Data,nPart,size(act{1},1));
-                                trueD = TD{RDMInd(i)};
-                            end
-                            V.corrNoiseless = corr(rsa_vectorizeRDM(trueD)',rsa_vectorizeRDM(T)');
-                            % add other info
-                            NN              = construct_neighbourhood(T);
-                            V.tauTrue_NN    = corr(rsa_vectorizeRDM(trueOrder)',rsa_vectorizeRDM(NN)'); % from neighbourhood
-                            V.tauTrue_all   = corr(rsa_vectorizeRDM(trueOrder)',rsa_vectorizeRDM(T)');  % from original distances
-                            V.RDM           = rsa_vectorizeRDM(T);
-                            V.RDMconsist    = RDMconsist;
-                            V.confidence_corr = Conf_corr;
-                            V.confidence_cos = Conf_cos;
-                            V.dataType      = dataInd(i); % uni / multi / directional
-                            V.metricType 	= alphaInd(i); % corr / cos / eigStd ...
-                            V.RDMtype       = RDMInd(i);
-                            V.metricIndex   = i;
-                            V.numSim        = n;
-                            V.corrReg       = r;
-                            V.varReg        = v;
-                            VV=addstruct(VV,V);
-                        end     % data
-                    end % correlation
-                    fprintf('- variance: %d.\n',v);
-                end % variance
-                toc(tElapsed);
+                    % here establish the true distance structure (TD)
+                    % when still noiseless
+                    [tD{1},tD{2},tD{3},~,~,~,~]=DNN_connect('firstLevel:calculate',data,nCond);
+                    TD{1} = DNN_connect('secondLevel:calcDist',tD{1},aType{1}); % uni-corr
+                    TD{2} = DNN_connect('secondLevel:calcDist',tD{2},aType{1}); % RDM-squared-corr
+                    % TD{3} = DNN_connect('secondLevel:calcDist',tD{3},aType{1}); % RDM-sqrt-corr
+                    TD{3} = DNN_connect('secondLevel:calcDist',tD{2},aType{2}); % RDM-squared-cos
+                    %  TD{5} = DNN_connect('secondLevel:calcDist',tD{3},aType{2}); % RDM-sqrt-cos
+                    TD{4} = anzellottiDist(data,nPart,size(act{1},1));       % Anzellotti
+                    for v=varReg        % within noise
+                        if v==0
+                            corR=0;
+                        else
+                            corR=corrReg;
+                        end
+                        for r=corR         % correlated noise
+                            Data = addSharedNoise(data,v,r,noiseType);
+                            [RDMconsist,~,Conf_corr,Conf_cos] = rdmConsist(Data,nPart,size(act_subsets{1},1));
+                            [fD{1},fD{2},~,fD{3},~,~,~]=DNN_connect('firstLevel:calculate',Data,nCond);
+                            % order: uni, RDM, RDM_sqrt, cRDM, cRDM_sqrt
+                            % cycle around all combinations of data / metrics
+                            for i=1:length(dataInd)
+                                if dataInd(i) < 4
+                                    t = DNN_connect('secondLevel:calcDist',fD{dataInd(i)},aType{alphaInd(i)});
+                                    T = rsa_squareRDM(t.dist');
+                                    trueD = rsa_squareRDM(TD{RDMInd(i)}.dist');
+                                else % Anzellotti
+                                    T = anzellottiDist(Data,nPart,size(act{1},1));
+                                    trueD = TD{RDMInd(i)};
+                                end
+                                V.corrNoiseless = corr(rsa_vectorizeRDM(trueD)',rsa_vectorizeRDM(T)');
+                                % add other info
+                                NN              = construct_neighbourhood(T);
+                                V.tauTrue_NN    = corr(rsa_vectorizeRDM(trueOrder)',rsa_vectorizeRDM(NN)'); % from neighbourhood
+                                V.tauTrue_all   = corr(rsa_vectorizeRDM(trueOrder)',rsa_vectorizeRDM(T)');  % from original distances
+                                V.RDM           = rsa_vectorizeRDM(T);
+                                V.RDMconsist    = RDMconsist;
+                                V.confidence_corr = Conf_corr;
+                                V.confidence_cos = Conf_cos;
+                                V.dataType      = dataInd(i); % uni / multi / directional
+                                V.metricType 	= alphaInd(i); % corr / cos / eigStd ...
+                                V.RDMtype       = RDMInd(i);
+                                V.metricIndex   = i;
+                                V.numSim        = n;
+                                V.corrReg       = r;
+                                V.varReg        = v;
+                                VV=addstruct(VV,V);
+                            end     % data
+                        end % correlation
+                        fprintf('- variance: %d.\n',v);
+                    end % variance
+                    toc(tElapsed);
+                end
+                save(fullfile(baseDir,DNNname,sprintf('simulations_noise_within_sim-%d',ll)),'-struct','VV'); %1: 1:7:0.2:3.4 2:0:0.25:3
+                fprintf('\nDone within simulations %s.\n\n',DNNname);
             end
-            save(fullfile(baseDir,DNNname,'simulations_noise_within'),'-struct','VV'); %1: 1:7:0.2:3.4 2:0:0.25:3
-            fprintf('\nDone within simulations %s.\n\n',DNNname);
         end
     case 'noise:simulate_within_newMetrics'
         %same as the one above + Basio + lCKA metrics
@@ -984,13 +986,14 @@ switch what
     case 'noise:simulate_shared' 
         % include only metrics that will be used for OHBM
         nPart       = 8;
-        nSim        = 50;
+        nSim        = 10;
         nUnits      = 500;
         noiseType   = 'shared_harmful';
-        DNNname     = 'alexnet';
+        DNNname     = 'alexnet-62';
         varReg = 0:0.25:3;
+        nLoop       = 1:20;
         corrReg = [0,0.1,0.2,0.4];
-        vararginoptions(varargin,{'nPart','nSim','noiseType','dataType','DNNname','corrReg','varReg'});
+        vararginoptions(varargin,{'nPart','nSim','noiseType','dataType','DNNname','corrReg','varReg','nLoop'});
         % initialize
         % 1) corr with uni; 2) corr with RDM-squared; 3) corr with RDM-sqrt;
         % 4) corr with cRDM-squared; 5) cos with cRDM-squared;
@@ -1007,84 +1010,86 @@ switch what
         act = DNN_connect('HOUSEKEEPING:normalizeUnits',act);
         spatialOrder = squareform(pdist((1:nLayer)')); % spatial structure (and how noise is imposed)  
         
-        VV=[];
-        if exist(fullfile(baseDir,DNNname,'simulations_noise_shared'),'file')
-            fprintf('This simulation of %s shared already exists - skipping...\n',DNNname);
-        else
-            for n=1:nSim    % number of simulations
-                fprintf('\nSimulation %d:\n',n);
-                tElapsed=tic;
-                % here subsample + repeat the true pattern for each partition
-                act_subsets = cell(nLayer,1);
-                data = cell(nLayer,1);
-                [act,trueOrder] = DNN_connect('HOUSEKEEPING:shuffled_structure',act); % shuffle the order
-                % true order after shuffling
-                for i=1:nLayer
-                    rUnits = randperm(size(act{i},2)); % randomise the order of units
-                    act_subsets{i} = act{i}(:,rUnits(1:nUnits));
-                    data{i} = repmat(act_subsets{i},nPart,1);
-                end
-                % here establish the true distance structure (TD)
-                % when still noiseless
-                [tD{1},tD{2},tD{3},~,~,~,~]=DNN_connect('firstLevel:calculate',data,nCond);
-                TD{1} = DNN_connect('secondLevel:calcDist',tD{1},aType{1}); % uni-corr
-                TD{2} = DNN_connect('secondLevel:calcDist',tD{2},aType{1}); % RDM-squared-corr
-                TD{3} = DNN_connect('secondLevel:calcDist',tD{3},aType{1}); % RDM-sqrt-corr
-                TD{4} = DNN_connect('secondLevel:calcDist',tD{2},aType{2}); % RDM-squared-cos
-                TD{5} = DNN_connect('secondLevel:calcDist',tD{3},aType{2}); % RDM-sqrt-cos
-                TD{6} = anzellottiDist(data,nPart,size(act{1},1));       % Anzellotti
-                for v=varReg        % within noise
-                    if v==0
-                        corR=0;
-                    else
-                        corR=corrReg;
+        for ll=nLoop
+            VV=[];
+            if exist(fullfile(baseDir,DNNname,sprintf('simulations_noise_shared_sim-%d',ll)),'file')
+                fprintf('This simulation of %s shared already exists - skipping...\n',DNNname);
+            else
+                for n=1:nSim    % number of simulations
+                    fprintf('\nSimulation %d:\n',n);
+                    tElapsed=tic;
+                    % here subsample + repeat the true pattern for each partition
+                    act_subsets = cell(nLayer,1);
+                    data = cell(nLayer,1);
+                    [act,trueOrder] = DNN_connect('HOUSEKEEPING:shuffled_structure',act); % shuffle the order
+                    % true order after shuffling
+                    for i=1:nLayer
+                        rUnits = randperm(size(act{i},2)); % randomise the order of units
+                        act_subsets{i} = act{i}(:,rUnits(1:nUnits));
+                        data{i} = repmat(act_subsets{i},nPart,1);
                     end
-                    for r=corR         % correlated noise
-                        Data = addSharedNoise(data,v,r,noiseType);
-                        for nreg = 1:size(Data,1)
-                            Data2{nreg,:} = Data{nreg}(1:size(Data{nreg},1)/2,:);
+                    % here establish the true distance structure (TD)
+                    % when still noiseless
+                    [tD{1},tD{2},tD{3},~,~,~,~]=DNN_connect('firstLevel:calculate',data,nCond);
+                    TD{1} = DNN_connect('secondLevel:calcDist',tD{1},aType{1}); % uni-corr
+                    TD{2} = DNN_connect('secondLevel:calcDist',tD{2},aType{1}); % RDM-squared-corr
+                    TD{3} = DNN_connect('secondLevel:calcDist',tD{3},aType{1}); % RDM-sqrt-corr
+                    TD{4} = DNN_connect('secondLevel:calcDist',tD{2},aType{2}); % RDM-squared-cos
+                    TD{5} = DNN_connect('secondLevel:calcDist',tD{3},aType{2}); % RDM-sqrt-cos
+                    TD{6} = anzellottiDist(data,nPart,size(act{1},1));       % Anzellotti
+                    for v=varReg        % within noise
+                        if v==0
+                            corR=0;
+                        else
+                            corR=corrReg;
                         end
-                        [RDMconsist,~,Conf_corr,Conf_cos] = rdmConsist(Data,nPart,size(act_subsets{1},1));
-                        % consistency of corr / cosine estimation
-                        [fD{1},fD{2},fD{3},fD{4},fD{5},~,~]=DNN_connect('firstLevel:calculate',Data2,nCond);
-                        % order: uni, RDM, RDM_sqrt, cRDM, cRDM_sqrt
-                        % cycle around all combinations of data / metrics
-                        for i=1:length(dataInd)
-                            if dataInd(i) < 6
-                                t = DNN_connect('secondLevel:calcDist',fD{dataInd(i)},aType{alphaInd(i)});
-                                T = rsa_squareRDM(t.dist');
-                                trueD = rsa_squareRDM(TD{RDMInd(i)}.dist');
-                            else % Anzellotti
-                                T = anzellottiDist(Data,nPart,size(act{1},1));
-                                trueD = TD{RDMInd(i)};
+                        for r=corR         % correlated noise
+                            Data = addSharedNoise(data,v,r,noiseType);
+                            for nreg = 1:size(Data,1)
+                                Data2{nreg,:} = Data{nreg}(1:size(Data{nreg},1)/2,:);
                             end
-                            V.corrNoiseless = corr(rsa_vectorizeRDM(trueD)',rsa_vectorizeRDM(T)');
-                            % add other info
-                            NN              = construct_neighbourhood(T);
-                            V.tauTrue_NN    = corr(rsa_vectorizeRDM(trueOrder)',rsa_vectorizeRDM(NN)'); % from neighbourhood
-                            V.tauTrue_all   = corr(rsa_vectorizeRDM(trueOrder)',rsa_vectorizeRDM(T)');  % from original distances
-                            V.tauSpatial_NN = corr(rsa_vectorizeRDM(spatialOrder)',rsa_vectorizeRDM(NN)'); % correlation with spatial noise
-                            V.tauSpatial_all = corr(rsa_vectorizeRDM(spatialOrder)',rsa_vectorizeRDM(T)');
-                            V.RDM           = rsa_vectorizeRDM(T);
-                            V.RDMconsist    = RDMconsist;
-                            V.conf_corr     = Conf_corr; % confidence estimates on connectivity
-                            V.conf_cos      = Conf_cos;
-                            V.dataType      = dataInd(i); % uni / multi / directional
-                            V.metricType 	= alphaInd(i); % corr / cos / eigStd ...
-                            V.RDMtype       = RDMInd(i);
-                            V.metricIndex   = i;
-                            V.numSim        = n;
-                            V.corrReg       = r;
-                            V.varReg        = v;
-                            VV=addstruct(VV,V);
-                        end     % data
-                    end % correlation
-                    fprintf('- variance: %d.\n',v);
-                end % variance
-                toc(tElapsed);
+                            [RDMconsist,~,Conf_corr,Conf_cos] = rdmConsist(Data,nPart,size(act_subsets{1},1));
+                            % consistency of corr / cosine estimation
+                            [fD{1},fD{2},fD{3},fD{4},fD{5},~,~]=DNN_connect('firstLevel:calculate',Data2,nCond);
+                            % order: uni, RDM, RDM_sqrt, cRDM, cRDM_sqrt
+                            % cycle around all combinations of data / metrics
+                            for i=1:length(dataInd)
+                                if dataInd(i) < 6
+                                    t = DNN_connect('secondLevel:calcDist',fD{dataInd(i)},aType{alphaInd(i)});
+                                    T = rsa_squareRDM(t.dist');
+                                    trueD = rsa_squareRDM(TD{RDMInd(i)}.dist');
+                                else % Anzellotti
+                                    T = anzellottiDist(Data,nPart,size(act{1},1));
+                                    trueD = TD{RDMInd(i)};
+                                end
+                                V.corrNoiseless = corr(rsa_vectorizeRDM(trueD)',rsa_vectorizeRDM(T)');
+                                % add other info
+                                NN              = construct_neighbourhood(T);
+                                V.tauTrue_NN    = corr(rsa_vectorizeRDM(trueOrder)',rsa_vectorizeRDM(NN)'); % from neighbourhood
+                                V.tauTrue_all   = corr(rsa_vectorizeRDM(trueOrder)',rsa_vectorizeRDM(T)');  % from original distances
+                                V.tauSpatial_NN = corr(rsa_vectorizeRDM(spatialOrder)',rsa_vectorizeRDM(NN)'); % correlation with spatial noise
+                                V.tauSpatial_all = corr(rsa_vectorizeRDM(spatialOrder)',rsa_vectorizeRDM(T)');
+                                V.RDM           = rsa_vectorizeRDM(T);
+                                V.RDMconsist    = RDMconsist;
+                                V.conf_corr     = Conf_corr; % confidence estimates on connectivity
+                                V.conf_cos      = Conf_cos;
+                                V.dataType      = dataInd(i); % uni / multi / directional
+                                V.metricType 	= alphaInd(i); % corr / cos / eigStd ...
+                                V.RDMtype       = RDMInd(i);
+                                V.metricIndex   = i;
+                                V.numSim        = n;
+                                V.corrReg       = r;
+                                V.varReg        = v;
+                                VV=addstruct(VV,V);
+                            end     % data
+                        end % correlation
+                        fprintf('- variance: %d.\n',v);
+                    end % variance
+                    toc(tElapsed);
+                end
+                save(fullfile(baseDir,DNNname,sprintf('simulations_noise_shared_sim-%d',ll)),'-struct','VV');
+                fprintf('\nDone within simulations %s: %s \n\n',DNNname);
             end
-            save(fullfile(baseDir,DNNname,'simulations_noise_shared'),'-struct','VV');
-            fprintf('\nDone within simulations %s: %s \n\n',DNNname);
         end
     case 'noise:simulate_shared_helpful_short' % FOR OHBM
         %spatial noise corresponds to the true order
@@ -2769,9 +2774,8 @@ switch what
         
         
     case 'run_job'
-        DNN_connect('generate:noisyPatterns','noiseLevel',.05);
-        DNN_connect('generate:noisyPatterns','noiseLevel',.6);
-        DNN_connect('noise:internal','noiseLevel',[.05,.1,.2,.4,.6,.8]);
+        DNN_connect('noise:simulate_within');
+        DNN_connect('noise:simulate_shared');
         
     otherwise 
         fprintf('no such case!\n');
