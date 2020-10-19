@@ -1657,7 +1657,7 @@ end
 
 %  % Local functions
 
-function G = makeGs(condN);
+function G = makeGs(condN)
 % makes specific Gs
 % G1 & G3 rank-deficient
 % G2  - G1 + other dim
