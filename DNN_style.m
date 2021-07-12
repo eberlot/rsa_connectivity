@@ -17,6 +17,7 @@ gray=[130 130 130]/255;
 lightgray=[170 170 170]/255;
 silver = [30 30 30]/255;
 blue=[49,130,189]/255;
+pink=[254 127 156]/255;
 mediumblue=[128,207,231]/255;
 lightblue=[158,202,225]/255;
 red=[222,45,38]/255;
@@ -144,6 +145,14 @@ switch(styID)
         opt.general.markersize   = 4;
     case 'FourColor'
         colours = {black,gray,blue,red};
+        canvas                  = 'blackonwhite';
+        opt.save.journal        = 'brain';
+        opt.general.markertype  = {'o','s'};
+        opt.general.linestyle   = {'-','-','-','-','--','--','--','--'};
+        opt.general.errorbars   = 'shade';
+        opt.general.markersize   = 4;
+    case 'ThesisFour'
+        colours = {gray,pink,blue,red};
         canvas                  = 'blackonwhite';
         opt.save.journal        = 'brain';
         opt.general.markertype  = {'o','s'};

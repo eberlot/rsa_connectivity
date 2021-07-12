@@ -80,8 +80,15 @@ for r1=1:nReg
         partComb = zeros(size(id1,1)*size(id2,1),4);
         for i1=1:size(id1,1)
             for i2=1:size(id2,1)
+<<<<<<< Updated upstream
                 g1 = G_all(partVec==id1(i1,1),partVec==id1(i1,2),r1);
                 g2 = G_all(partVec==id2(i2,1),partVec==id2(i2,2),r2);
+=======
+                g1 = (Data{r1}(partVec==id1(i1,1),:)*Data{r1}(partVec==id1(i1,2),:)')/size(Data{r1},2);
+                g2 = (Data{r2}(partVec==id2(i2,1),:)*Data{r2}(partVec==id2(i2,2),:)')/size(Data{r2},2);
+                %g1 = G_all(partVec==id1(i1,1),partVec==id1(i1,2),r1);
+                %g2 = G_all(partVec==id2(i2,1),partVec==id2(i2,2),r2);
+>>>>>>> Stashed changes
                 G_tmp1(:,:,idx1) = H*g1*H'; % double centered
                 G_tmp2(:,:,idx1) = H*g2*H'; % double centered
                 corr_tmp(idx1) = corr(rsa_vectorizeIPMfull(G_tmp1(:,:,idx1))',rsa_vectorizeIPMfull(G_tmp2(:,:,idx1))');
